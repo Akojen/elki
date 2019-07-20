@@ -12,6 +12,7 @@ elki.outlier.subspace.OutRankS1
 elki.projection.BarnesHutTSNE
 elki.projection.TSNE t-SNE tSNE
 elki.projection.SNE
+elki.projection.UMAP UMAP umap
 elki.algorithm.statistics.AddSingleScale
 elki.algorithm.statistics.AddUniformScale
 elki.algorithm.statistics.AveragePrecisionAtK
