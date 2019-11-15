@@ -40,9 +40,8 @@ import elki.math.MeanVariance;
 import elki.result.EvaluationResult;
 import elki.result.Metadata;
 import elki.result.ResultUtil;
-import elki.utilities.io.FormatUtil;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.Flag;
 import elki.utilities.optionhandling.parameters.ObjectParameter;
@@ -140,7 +139,7 @@ public class EvaluateClustering implements Evaluator {
     }
     if(refc == null) {
       LOG.debug("Generating a new reference clustering.");
-      Object refres = referencealg.run(db);
+      Object refres = referencealg.autorun(db);
       List<Clustering<?>> refcrs = Clustering.getClusteringResults(refres);
       if(refcrs.isEmpty()) {
         LOG.warning("Reference algorithm did not return a clustering result!");
@@ -170,8 +169,7 @@ public class EvaluateClustering implements Evaluator {
    * @param refc Reference clustering
    */
   protected void evaluteResult(Database db, Clustering<?> c, Clustering<?> refc) {
-    ClusterContingencyTable contmat = new ClusterContingencyTable(selfPairing, noiseSpecialHandling);
-    contmat.process(refc, c);
+    ClusterContingencyTable contmat = new ClusterContingencyTable(selfPairing, noiseSpecialHandling, refc, c);
 
     ScoreResult sr = new ScoreResult(contmat);
     sr.addHeader(Metadata.of(c).getLongName());
@@ -212,41 +210,56 @@ public class EvaluateClustering implements Evaluator {
       this.contmat = contmat;
 
       PairCounting paircount = contmat.getPaircount();
-      MeasurementGroup g = newGroup("Pair counting measures");
-      g.addMeasure("Jaccard", paircount.jaccard(), 0, 1, false);
-      g.addMeasure("F1-Measure", paircount.f1Measure(), 0, 1, false);
-      g.addMeasure("Precision", paircount.precision(), 0, 1, false);
-      g.addMeasure("Recall", paircount.recall(), 0, 1, false);
-      g.addMeasure("Rand", paircount.randIndex(), 0, 1, false);
-      g.addMeasure("ARI", paircount.adjustedRandIndex(), 0, 1, false);
-      g.addMeasure("FowlkesMallows", paircount.fowlkesMallows(), 0, 1, false);
+      newGroup("Pair counting") //
+          .addMeasure("Jaccard", paircount.jaccard(), 0, 1, false) //
+          .addMeasure("F1-Measure", paircount.f1Measure(), 0, 1, false) //
+          .addMeasure("Precision", paircount.precision(), 0, 1, false) //
+          .addMeasure("Recall", paircount.recall(), 0, 1, false) //
+          .addMeasure("Rand", paircount.randIndex(), 0, 1, false) //
+          .addMeasure("ARI", paircount.adjustedRandIndex(), 0, 1, false) //
+          .addMeasure("Fowlkes-Mallows", paircount.fowlkesMallows(), 0, 1, false);
 
       Entropy entropy = contmat.getEntropy();
-      g = newGroup("Entropy based measures");
-      g.addMeasure("NMI Joint", entropy.entropyNMIJoint(), 0, 1, false);
-      g.addMeasure("NMI Sqrt", entropy.entropyNMISqrt(), 0, 1, false);
+      MeasurementGroup g = newGroup("Entropy based") //
+          .addMeasure("MI", entropy.mutualInformation(), 0, entropy.upperBoundMI(), false) //
+          .addMeasure("VI", entropy.variationOfInformation(), 0, entropy.upperBoundVI(), true) //
+          .addMeasure("Homogeneity", entropy.mutualInformation() / entropy.entropyFirst(), 0, 1, false) //
+          .addMeasure("Completeness", entropy.mutualInformation() / entropy.entropySecond(), 0, 1, false) //
+          .addMeasure("Arithmetic NMI", entropy.arithmeticNMI(), 0, 1, false) //
+          .addMeasure("Geometric NMI", entropy.geometricNMI(), 0, 1, false) //
+          .addMeasure("Joint NMI", entropy.jointNMI(), 0, 1, false) //
+          .addMeasure("NVI", entropy.normalizedVariationOfInformation(), 0, 1, true) //
+          .addMeasure("NID", entropy.normalizedInformationDistance(), 0, 1, true);
+      // For large data sets, we do not compute EMI/AMI values.
+      if(entropy.expectedMutualInformation() > 0) {
+        g.addMeasure("Arithmetic AMI", entropy.adjustedArithmeticMI(), 0, 1, false) //
+            .addMeasure("Geometric AMI", entropy.adjustedGeometricMI(), 0, 1, false) //
+            .addMeasure("Joint AMI", entropy.adjustedJointMI(), 0, 1, false); //
+      }
 
       BCubed bcubed = contmat.getBCubed();
-      g = newGroup("BCubed-based measures");
-      g.addMeasure("F1-Measure", bcubed.f1Measure(), 0, 1, false);
-      g.addMeasure("Recall", bcubed.recall(), 0, 1, false);
-      g.addMeasure("Precision", bcubed.precision(), 0, 1, false);
+      newGroup("B3") //
+          .addMeasure("F1-Measure", bcubed.f1Measure(), 0, 1, false) //
+          .addMeasure("Precision", bcubed.precision(), 0, 1, false) //
+          .addMeasure("Recall", bcubed.recall(), 0, 1, false);
 
       SetMatchingPurity setm = contmat.getSetMatching();
-      g = newGroup("Set-Matching-based measures");
-      g.addMeasure("F1-Measure", setm.f1Measure(), 0, 1, false);
-      g.addMeasure("Purity", setm.purity(), 0, 1, false);
-      g.addMeasure("Inverse Purity", setm.inversePurity(), 0, 1, false);
+      newGroup("Set matching") //
+          .addMeasure("F1-Measure", setm.f1Measure(), 0, 1, false) //
+          .addMeasure("Purity", setm.purity(), 0, 1, false) //
+          .addMeasure("Inverse Purity", setm.inversePurity(), 0, 1, false);
 
       EditDistance edit = contmat.getEdit();
-      g = newGroup("Editing-distance measures");
-      g.addMeasure("F1-Measure", edit.f1Measure(), 0, 1, false);
-      g.addMeasure("Precision", edit.editDistanceFirst(), 0, 1, false);
-      g.addMeasure("Recall", edit.editDistanceSecond(), 0, 1, false);
+      newGroup("Edit Distance") //
+          .addMeasure("F1-Measure", edit.f1Measure(), 0, 1, false) //
+          .addMeasure("Precision", edit.editDistanceFirst(), 0, 1, false) //
+          .addMeasure("Recall", edit.editDistanceSecond(), 0, 1, false);
 
       MeanVariance gini = contmat.averageSymmetricGini();
-      g = newGroup("Gini measures");
-      g.addMeasure("Mean +-" + FormatUtil.NF4.format(gini.getCount() > 1. ? gini.getSampleStddev() : 0.), gini.getMean(), 0, 1, false);
+      MeanVariance agini = contmat.adjustedSymmetricGini();
+      newGroup("Gini") //
+          .addMeasure("Mean", gini.getMean(), 0, 1, false) //
+          .addMeasure("Adjusted Mean", agini.getMean(), 0, 1, false);
     }
 
     /**

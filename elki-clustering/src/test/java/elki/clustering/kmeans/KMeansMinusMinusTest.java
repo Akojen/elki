@@ -42,9 +42,9 @@ public class KMeansMinusMinusTest extends AbstractClusterAlgorithmTest {
         .with(KMeans.K_ID, 5) //
         .with(KMeans.SEED_ID, 7) //
         .with(KMeansMinusMinus.Par.RATE_ID, 0.) //
-        .build().run(db);
-    testFMeasure(db, result, 0.998005);
-    testClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.998005);
+    assertClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
   }
 
   @Test
@@ -54,9 +54,9 @@ public class KMeansMinusMinusTest extends AbstractClusterAlgorithmTest {
         .with(KMeans.K_ID, 5) //
         .with(KMeans.SEED_ID, 7) //
         .with(KMeansMinusMinus.Par.RATE_ID, 0.1) //
-        .build().run(db);
-    testFMeasure(db, result, 0.998);
-    testClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.998);
+    assertClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
   }
 
   @Test
@@ -67,8 +67,8 @@ public class KMeansMinusMinusTest extends AbstractClusterAlgorithmTest {
         .with(KMeans.SEED_ID, 7) //
         .with(KMeansMinusMinus.Par.RATE_ID, 0.1) //
         .with(KMeansMinusMinus.Par.NOISE_FLAG_ID) //
-        .build().run(db);
-    testFMeasure(db, result, 0.925621);
-    testClusterSizes(result, new int[] { 100, 116, 184, 200, 200, 200 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.925621);
+    assertClusterSizes(result, new int[] { 100, 116, 184, 200, 200, 200 });
   }
 }

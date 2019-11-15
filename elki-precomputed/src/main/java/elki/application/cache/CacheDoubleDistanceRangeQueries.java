@@ -20,22 +20,19 @@
  */
 package elki.application.cache;
 
-import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 import elki.application.AbstractApplication;
 import elki.database.Database;
 import elki.database.StaticArrayDatabase;
-import elki.database.ids.DBIDIter;
-import elki.database.ids.DBIDUtil;
-import elki.database.ids.DoubleDBIDListIter;
-import elki.database.ids.ModifiableDoubleDBIDList;
+import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.range.RangeQuery;
+import elki.database.query.range.RangeSearcher;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
 import elki.logging.Logging;
@@ -83,11 +80,11 @@ public class CacheDoubleDistanceRangeQueries<O> extends AbstractApplication {
   /**
    * Output file.
    */
-  private File out;
+  private Path out;
 
   /**
    * Magic number to identify files.
-   *
+   * <p>
    * Note, when cloning this class, and performing any incompatible change to
    * the file format, you should also change this magic ID!
    */
@@ -101,7 +98,7 @@ public class CacheDoubleDistanceRangeQueries<O> extends AbstractApplication {
    * @param radius Query radius
    * @param out Matrix output file
    */
-  public CacheDoubleDistanceRangeQueries(Database database, Distance<? super O> distance, double radius, File out) {
+  public CacheDoubleDistanceRangeQueries(Database database, Distance<? super O> distance, double radius, Path out) {
     super();
     this.database = database;
     this.distance = distance;
@@ -113,29 +110,28 @@ public class CacheDoubleDistanceRangeQueries<O> extends AbstractApplication {
   public void run() {
     database.initialize();
     Relation<O> relation = database.getRelation(distance.getInputTypeRestriction());
-    RangeQuery<O> rangeQ = new QueryBuilder<>(relation, distance).rangeQuery();
+    RangeSearcher<DBIDRef> rangeQ = new QueryBuilder<>(relation, distance).rangeByDBID();
 
     LOG.verbose("Performing range queries with radius " + radius);
 
     // open file.
-    try (RandomAccessFile file = new RandomAccessFile(out, "rw");
-        FileChannel channel = file.getChannel();
+    try (FileChannel channel = FileChannel.open(out, //
+        StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE);
         // and acquire a file write lock
         FileLock lock = channel.lock()) {
-      // write magic header
-      file.writeInt(RANGE_CACHE_MAGIC);
-      // write the query radius.
-      file.writeDouble(radius);
-
       int bufsize = 100 * 12 * 2 + 10; // Initial size, enough for 100.
       ByteBuffer buffer = ByteBuffer.allocateDirect(bufsize);
+
+      // write magic header and query radius.
+      buffer.putInt(RANGE_CACHE_MAGIC).putDouble(radius).flip();
+      channel.write(buffer);
 
       FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("Computing range queries", relation.size(), LOG) : null;
 
       ModifiableDoubleDBIDList nn = DBIDUtil.newDistanceDBIDList();
       DoubleDBIDListIter ni = nn.iter();
       for(DBIDIter it = relation.iterDBIDs(); it.valid(); it.advance()) {
-        rangeQ.getRangeForDBID(it, radius, nn.clear()).sort();
+        rangeQ.getRange(it, radius, nn.clear()).sort();
         final int nnsize = nn.size();
 
         // Grow the buffer when needed:
@@ -211,7 +207,7 @@ public class CacheDoubleDistanceRangeQueries<O> extends AbstractApplication {
     /**
      * Output file.
      */
-    private File out = null;
+    private Path out = null;
 
     @Override
     public void configure(Parameterization config) {

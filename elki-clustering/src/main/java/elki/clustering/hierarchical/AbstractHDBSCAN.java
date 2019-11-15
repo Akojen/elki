@@ -20,14 +20,19 @@
  */
 package elki.clustering.hierarchical;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
-import elki.database.datastore.*;
+import elki.database.datastore.DataStoreFactory;
+import elki.database.datastore.DataStoreUtil;
+import elki.database.datastore.DoubleDataStore;
+import elki.database.datastore.WritableDBIDDataStore;
+import elki.database.datastore.WritableDoubleDataStore;
 import elki.database.ids.*;
 import elki.database.query.distance.DistanceQuery;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.math.MathUtil;
@@ -35,9 +40,11 @@ import elki.math.geometry.PrimsMinimumSpanningTree;
 import elki.utilities.datastructures.heap.DoubleLongHeap;
 import elki.utilities.documentation.Reference;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Abstract base class for HDBSCAN variations.
@@ -62,11 +69,16 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     booktitle = "Pacific-Asia Conf. Advances in Knowledge Discovery and Data Mining (PAKDD)", //
     url = "https://doi.org/10.1007/978-3-642-37456-2_14", //
     bibkey = "DBLP:conf/pakdd/CampelloMS13")
-public abstract class AbstractHDBSCAN<O, R> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, R> {
+public abstract class AbstractHDBSCAN<O, R> implements Algorithm {
   /**
    * MinPts parameter.
    */
   protected final int minPts;
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * Constructor.
@@ -75,7 +87,8 @@ public abstract class AbstractHDBSCAN<O, R> extends AbstractDistanceBasedAlgorit
    * @param minPts Minimum number of points for density
    */
   public AbstractHDBSCAN(Distance<? super O> distance, int minPts) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.minPts = minPts;
   }
 
@@ -87,12 +100,12 @@ public abstract class AbstractHDBSCAN<O, R> extends AbstractDistanceBasedAlgorit
    * @param minPts Minimum neighborhood size
    * @return Data store with core distances
    */
-  protected WritableDoubleDataStore computeCoreDists(DBIDs ids, KNNQuery<O> knnQ, int minPts) {
+  protected WritableDoubleDataStore computeCoreDists(DBIDs ids, KNNSearcher<DBIDRef> knnQ, int minPts) {
     final Logging LOG = getLogger();
     final WritableDoubleDataStore coredists = DataStoreUtil.makeDoubleStorage(ids, DataStoreFactory.HINT_HOT | DataStoreFactory.HINT_DB);
     FiniteProgress cprog = LOG.isVerbose() ? new FiniteProgress("Computing core sizes", ids.size(), LOG) : null;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
-      coredists.put(iter, knnQ.getKNNForDBID(iter, minPts).getKNNDistance());
+      coredists.put(iter, knnQ.getKNN(iter, minPts).getKNNDistance());
       LOG.incrementProcessed(cprog);
     }
     LOG.ensureCompleted(cprog);
@@ -275,8 +288,15 @@ public abstract class AbstractHDBSCAN<O, R> extends AbstractDistanceBasedAlgorit
 
   @Override
   public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
+
+  /**
+   * Get the (STATIC) logger for this class.
+   *
+   * @return the static logger
+   */
+  protected abstract Logging getLogger();
 
   /**
    * Parameterization class
@@ -287,7 +307,7 @@ public abstract class AbstractHDBSCAN<O, R> extends AbstractDistanceBasedAlgorit
    *
    * @param <O> Object type
    */
-  public abstract static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public abstract static class Par<O> implements Parameterizer {
     /**
      * Option ID for linkage parameter.
      */
@@ -298,9 +318,15 @@ public abstract class AbstractHDBSCAN<O, R> extends AbstractDistanceBasedAlgorit
      */
     protected int minPts;
 
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(MIN_PTS_ID) //
           .addConstraint(CommonConstraints.GREATER_THAN_ONE_INT) //
           .grab(config, x -> minPts = x);

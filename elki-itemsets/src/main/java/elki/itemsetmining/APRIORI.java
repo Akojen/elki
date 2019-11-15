@@ -115,6 +115,12 @@ public class APRIORI extends AbstractFrequentItemsetAlgorithm {
     super(minfreq);
   }
 
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    // FIXME: relax to non-field bitvectors
+    return TypeUtil.array(TypeUtil.BIT_VECTOR_FIELD);
+  }
+
   /**
    * Performs the APRIORI algorithm on the given database.
    *
@@ -575,16 +581,6 @@ public class APRIORI extends AbstractFrequentItemsetAlgorithm {
       msg.append(']');
     }
     return msg;
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.BIT_VECTOR_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

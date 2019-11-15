@@ -20,7 +20,7 @@
  */
 package elki.outlier.lof;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
@@ -29,11 +29,12 @@ import elki.database.datastore.DoubleDataStore;
 import elki.database.datastore.WritableDoubleDataStore;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.logging.progress.StepProgress;
@@ -48,9 +49,11 @@ import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Algorithm to compute density-based local outlier factors in a database based
@@ -72,7 +75,7 @@ import elki.utilities.optionhandling.parameters.IntParameter;
  * @author Elke Achtert
  * @since 0.2
  * 
- * @has - - - KNNQuery
+ * @has - - - KNNSearcher
  * 
  * @param <O> the type of data objects handled by this algorithm
  */
@@ -84,16 +87,21 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     url = "https://doi.org/10.1145/342009.335388", //
     bibkey = "DBLP:conf/sigmod/BreunigKNS00")
 @Priority(Priority.RECOMMENDED)
-public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class LOF<O> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(LOF.class);
 
   /**
-   * The number of neighbors to query (including the query point!)
+   * Distance function used.
    */
-  protected int k;
+  protected Distance<? super O> distance;
+
+  /**
+   * The number of neighbors to query (plus the query point!)
+   */
+  protected int kplus;
 
   /**
    * Constructor.
@@ -103,8 +111,14 @@ public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * @param distance the neighborhood distance function
    */
   public LOF(int k, Distance<? super O> distance) {
-    super(distance);
-    this.k = k + 1; // + query point
+    super();
+    this.distance = distance;
+    this.kplus = k + 1; // + query point
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -118,7 +132,7 @@ public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
     DBIDs ids = relation.getDBIDs();
 
     LOG.beginStep(stepprog, 1, "Materializing nearest-neighbor sets.");
-    KNNQuery<O> knnq = new QueryBuilder<>(relation, distance).precomputed().kNNQuery(k);
+    KNNSearcher<DBIDRef> knnq = new QueryBuilder<>(relation, distance).precomputed().kNNByDBID(kplus);
 
     // Compute LRDs
     LOG.beginStep(stepprog, 2, "Computing Local Reachability Densities (LRD).");
@@ -147,7 +161,7 @@ public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * @param ids IDs to process
    * @param lrds Reachability storage
    */
-  private void computeLRDs(KNNQuery<O> knnq, DBIDs ids, WritableDoubleDataStore lrds) {
+  private void computeLRDs(KNNSearcher<DBIDRef> knnq, DBIDs ids, WritableDoubleDataStore lrds) {
     FiniteProgress lrdsProgress = LOG.isVerbose() ? new FiniteProgress("Local Reachability Densities (LRD)", ids.size(), LOG) : null;
     double lrd;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
@@ -165,15 +179,15 @@ public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * @param curr Current object
    * @return Local Reachability Density
    */
-  protected double computeLRD(KNNQuery<O> knnq, DBIDIter curr) {
-    final KNNList neighbors = knnq.getKNNForDBID(curr, k);
+  protected double computeLRD(KNNSearcher<DBIDRef> knnq, DBIDIter curr) {
+    final KNNList neighbors = knnq.getKNN(curr, kplus);
     double sum = 0.0;
     int count = 0;
     for(DoubleDBIDListIter neighbor = neighbors.iter(); neighbor.valid(); neighbor.advance()) {
       if(DBIDUtil.equal(curr, neighbor)) {
         continue;
       }
-      KNNList neighborsNeighbors = knnq.getKNNForDBID(neighbor, k);
+      KNNList neighborsNeighbors = knnq.getKNN(neighbor, kplus);
       sum += MathUtil.max(neighbor.doubleValue(), neighborsNeighbors.getKNNDistance());
       count++;
     }
@@ -190,7 +204,7 @@ public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * @param lofs Local outlier factor storage
    * @param lofminmax Score minimum/maximum tracker
    */
-  private void computeLOFScores(KNNQuery<O> knnq, DBIDs ids, DoubleDataStore lrds, WritableDoubleDataStore lofs, DoubleMinMax lofminmax) {
+  private void computeLOFScores(KNNSearcher<DBIDRef> knnq, DBIDs ids, DoubleDataStore lrds, WritableDoubleDataStore lofs, DoubleMinMax lofminmax) {
     FiniteProgress progressLOFs = LOG.isVerbose() ? new FiniteProgress("Local Outlier Factor (LOF) scores", ids.size(), LOG) : null;
     double lof;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
@@ -211,14 +225,14 @@ public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * @param lrds Stored reachability densities
    * @return LOF score.
    */
-  protected double computeLOFScore(KNNQuery<O> knnq, DBIDRef cur, DoubleDataStore lrds) {
+  protected double computeLOFScore(KNNSearcher<DBIDRef> knnq, DBIDRef cur, DoubleDataStore lrds) {
     final double lrdp = lrds.doubleValue(cur);
     if(Double.isInfinite(lrdp)) {
       return 1.0;
     }
     double sum = 0.;
     int count = 0;
-    final KNNList neighbors = knnq.getKNNForDBID(cur, k);
+    final KNNList neighbors = knnq.getKNN(cur, kplus);
     for(DBIDIter neighbor = neighbors.iter(); neighbor.valid(); neighbor.advance()) {
       // skip the point itself
       if(DBIDUtil.equal(cur, neighbor)) {
@@ -230,16 +244,6 @@ public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
     return sum / (lrdp * count);
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    * 
@@ -249,7 +253,7 @@ public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * 
    * @param <O> Object type
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Parameter to specify the number of nearest neighbors of an object to be
      * considered for computing its LOF score, must be an integer greater than
@@ -258,13 +262,19 @@ public class LOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
     public static final OptionID K_ID = new OptionID("lof.k", "The number of nearest neighbors (not including the query point) of an object to be considered for computing its LOF score.");
 
     /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
+    /**
      * The neighborhood size to use.
      */
     protected int k = 2;
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(K_ID) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> k = x);

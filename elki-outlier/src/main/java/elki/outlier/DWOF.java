@@ -20,19 +20,20 @@
  */
 package elki.outlier;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.*;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
 import elki.database.query.distance.DistanceQuery;
-import elki.database.query.knn.KNNQuery;
-import elki.database.query.range.RangeQuery;
+import elki.database.query.knn.KNNSearcher;
+import elki.database.query.range.RangeSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.logging.progress.IndefiniteProgress;
@@ -46,10 +47,12 @@ import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Algorithm to compute dynamic-window outlier factors in a database based on a
@@ -74,11 +77,16 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     booktitle = "Proc. 6th Iberian Conf. Pattern Recognition and Image Analysis (IbPRIA 2013)", //
     url = "https://doi.org/10.1007/978-3-642-38628-2_61", //
     bibkey = "DBLP:conf/ibpria/MomtazMG13")
-public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class DWOF<O> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(DWOF.class);
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * Holds the value of {@link Par#K_ID} i.e. Number of neighbors to
@@ -89,7 +97,7 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
   /**
    * The radii changing ratio
    */
-  private double delta = 1.1;
+  protected double delta = 1.1;
 
   /**
    * Constructor.
@@ -99,9 +107,15 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @param delta Radius increase factor
    */
   public DWOF(Distance<? super O> distance, int k, double delta) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.kplus = k + 1; // + query point
     this.delta = delta;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -116,8 +130,8 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
     final QueryBuilder<O> qb = new QueryBuilder<>(relation, distance);
     DistanceQuery<O> distFunc = qb.distanceQuery();
     // Get k nearest neighbor and range query on the relation.
-    KNNQuery<O> knnq = qb.kNNQuery(kplus);
-    RangeQuery<O> rnnQuery = qb.rangeQuery();
+    KNNSearcher<DBIDRef> knnq = qb.kNNByDBID(kplus);
+    RangeSearcher<DBIDRef> rnnQuery = qb.rangeByDBID();
 
     StepProgress stepProg = LOG.isVerbose() ? new StepProgress("DWOF", 2) : null;
     // DWOF output score storage.
@@ -183,7 +197,7 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @param knnq kNN search function
    * @param radii WritableDoubleDataStore to store radii
    */
-  private void initializeRadii(DBIDs ids, KNNQuery<O> knnq, DistanceQuery<O> distFunc, WritableDoubleDataStore radii) {
+  private void initializeRadii(DBIDs ids, KNNSearcher<DBIDRef> knnq, DistanceQuery<O> distFunc, WritableDoubleDataStore radii) {
     FiniteProgress avgDistProgress = LOG.isVerbose() ? new FiniteProgress("Calculating average kNN distances-", ids.size(), LOG) : null;
     double absoluteMinDist = Double.POSITIVE_INFINITY;
     double minAvgDist = Double.POSITIVE_INFINITY;
@@ -191,7 +205,7 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
     Mean mean = new Mean();
     // Iterate over all objects
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
-      KNNList iterNeighbors = knnq.getKNNForDBID(iter, kplus);
+      KNNList iterNeighbors = knnq.getKNN(iter, kplus);
       // skip the point itself
       mean.reset();
       for(DBIDIter neighbor1 = iterNeighbors.iter(); neighbor1.valid(); neighbor1.advance()) {
@@ -238,7 +252,7 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @param radii Radii to cluster accordingly
    * @param labels Label storage.
    */
-  private void clusterData(DBIDs ids, RangeQuery<O> rnnQuery, WritableDoubleDataStore radii, WritableDataStore<ModifiableDBIDs> labels) {
+  private void clusterData(DBIDs ids, RangeSearcher<DBIDRef> rnnQuery, WritableDoubleDataStore radii, WritableDataStore<ModifiableDBIDs> labels) {
     FiniteProgress clustProg = LOG.isVerbose() ? new FiniteProgress("Density-Based Clustering", ids.size(), LOG) : null;
     // Iterate over all objects
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
@@ -256,7 +270,7 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
       // iterate over nChain
       for(DBIDIter toGetNeighbors = nChain.iter(); toGetNeighbors.valid(); toGetNeighbors.advance()) {
         double range = radii.doubleValue(toGetNeighbors);
-        DoubleDBIDList nNeighbors = rnnQuery.getRangeForDBID(toGetNeighbors, range);
+        DoubleDBIDList nNeighbors = rnnQuery.getRange(toGetNeighbors, range);
         for(DoubleDBIDListIter iter2 = nNeighbors.iter(); iter2.valid(); iter2.advance()) {
           if(DBIDUtil.equal(toGetNeighbors, iter2)) {
             continue;
@@ -304,16 +318,6 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
     return countUnmerged;
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
@@ -323,7 +327,7 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    *
    * @param <O> Object type
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Option ID for the number of neighbors.
      */
@@ -344,9 +348,15 @@ public class DWOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
      */
     protected double delta = 1.1;
 
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
     @Override
     public void configure(Parameterization config) {
-      super.configure(config); // Distance
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(K_ID) //
           .addConstraint(CommonConstraints.GREATER_THAN_ONE_INT) //
           .grab(config, x -> k = x);

@@ -20,7 +20,7 @@
  */
 package elki.outlier.lof.parallel;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
@@ -30,12 +30,11 @@ import elki.database.datastore.WritableDoubleDataStore;
 import elki.database.ids.DBIDs;
 import elki.database.ids.KNNList;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
-import elki.logging.Logging;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.math.DoubleMinMax;
 import elki.outlier.OutlierAlgorithm;
 import elki.outlier.lof.LOF;
@@ -47,8 +46,10 @@ import elki.result.outlier.BasicOutlierScoreMeta;
 import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
 import elki.utilities.documentation.Reference;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Parallel implementation of Local Outlier Factor using processors.
@@ -74,11 +75,16 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     booktitle = "Data Mining and Knowledge Discovery 28(1)", //
     url = "https://doi.org/10.1007/s10618-012-0300-z", //
     bibkey = "DBLP:journals/datamine/SchubertZK14")
-public class ParallelLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class ParallelLOF<O> implements OutlierAlgorithm {
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
+
   /**
    * Parameter k + 1 for query point
    */
-  private int kplus;
+  protected int kplus;
 
   /**
    * Constructor.
@@ -87,18 +93,14 @@ public class ParallelLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? su
    * @param k K parameter
    */
   public ParallelLOF(Distance<? super O> distance, int k) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.kplus = k + 1;
   }
 
-  /**
-   * Class logger
-   */
-  private static final Logging LOG = Logging.getLogger(ParallelLOF.class);
-
   @Override
   public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -109,14 +111,14 @@ public class ParallelLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? su
    */
   public OutlierResult run(Relation<O> relation) {
     DBIDs ids = relation.getDBIDs();
-    KNNQuery<O> knnq = new QueryBuilder<>(relation, distance).kNNQuery(kplus);
+    QueryBuilder<O> qb = new QueryBuilder<>(relation, distance);
 
     // Phase one: KNN and k-dist
     WritableDoubleDataStore kdists = DataStoreUtil.makeDoubleStorage(ids, DataStoreFactory.HINT_DB);
     WritableDataStore<KNNList> knns = DataStoreUtil.makeStorage(ids, DataStoreFactory.HINT_DB, KNNList.class);
     {
       // Compute kNN
-      KNNProcessor<O> knnm = new KNNProcessor<>(kplus, knnq);
+      KNNProcessor knnm = new KNNProcessor(kplus, () -> qb.kNNByDBID(kplus));
       SharedObject<KNNList> knnv = new SharedObject<>();
       WriteDataStoreProcessor<KNNList> storek = new WriteDataStoreProcessor<>(knns);
       knnm.connectKNNOutput(knnv);
@@ -168,11 +170,6 @@ public class ParallelLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? su
     return new OutlierResult(meta, scoreres);
   }
 
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class
    * 
@@ -182,15 +179,21 @@ public class ParallelLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? su
    * 
    * @param <O> Object type
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
     /**
      * K parameter
      */
-    int k;
+    protected int k;
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(LOF.Par.K_ID) //
           .grab(config, x -> k = x);
     }

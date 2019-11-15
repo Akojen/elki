@@ -42,9 +42,9 @@ public class FeatureBaggingTest extends AbstractOutlierAlgorithmTest {
         .with(LOF.Par.K_ID, 10) //
         .with(FeatureBagging.Par.NUM_ID, 10) //
         .with(FeatureBagging.Par.SEED_ID, 1) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.94758434);
-    testSingleScore(result, 1293, 12.816102);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.94758434);
+    assertSingleScore(result, 1293, 12.816102);
   }
 
   @Test
@@ -55,8 +55,8 @@ public class FeatureBaggingTest extends AbstractOutlierAlgorithmTest {
         .with(FeatureBagging.Par.NUM_ID, 10) //
         .with(FeatureBagging.Par.SEED_ID, 5) //
         .with(FeatureBagging.Par.BREADTH_ID) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.92470588);
-    testSingleScore(result, 1293, 1.2047264);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.92470588);
+    assertSingleScore(result, 1293, 1.2047264);
   }
 }

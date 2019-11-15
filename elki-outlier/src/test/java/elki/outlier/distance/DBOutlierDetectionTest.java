@@ -29,7 +29,7 @@ import elki.data.type.TypeUtil;
 import elki.database.Database;
 import elki.database.ids.DBIDRange;
 import elki.database.query.distance.DistanceQuery;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.Relation;
 import elki.distance.minkowski.EuclideanDistance;
 import elki.index.distancematrix.PrecomputedDistanceMatrix;
@@ -51,9 +51,9 @@ public class DBOutlierDetectionTest extends AbstractOutlierAlgorithmTest {
     OutlierResult result = new ELKIBuilder<DBOutlierDetection<DoubleVector>>(DBOutlierDetection.class) //
         .with(DBOutlierDetection.Par.D_ID, 0.175) //
         .with(DBOutlierDetection.Par.P_ID, 0.98) //
-        .build().run(db);
-    testSingleScore(result, 1025, 0.0);
-    testAUC(db, "Noise", result, 0.97487179);
+        .build().autorun(db);
+    assertSingleScore(result, 1025, 0.0);
+    assertAUC(db, "Noise", result, 0.97487179);
   }
 
   /**
@@ -69,9 +69,9 @@ public class DBOutlierDetectionTest extends AbstractOutlierAlgorithmTest {
     OutlierResult result = new ELKIBuilder<DBOutlierDetection<DoubleVector>>(DBOutlierDetection.class) //
         .with(DBOutlierDetection.Par.D_ID, 0.175) //
         .with(DBOutlierDetection.Par.P_ID, 0.98) //
-        .build().run(db);
-    testSingleScore(result, 1025, 0.0);
-    testAUC(db, "Noise", result, 0.97487179);
+        .build().autorun(db);
+    assertSingleScore(result, 1025, 0.0);
+    assertAUC(db, "Noise", result, 0.97487179);
   }
 
   /**
@@ -84,7 +84,7 @@ public class DBOutlierDetectionTest extends AbstractOutlierAlgorithmTest {
     Relation<NumberVector> rel = db.getRelation(TypeUtil.NUMBER_VECTOR_FIELD);
     PrecomputedDistanceMatrix<NumberVector> idx = new PrecomputedDistanceMatrix<NumberVector>(rel, (DBIDRange) rel.getDBIDs(), EuclideanDistance.STATIC) {
       @Override
-      public KNNQuery<NumberVector> getKNNQuery(DistanceQuery<NumberVector> distanceQuery, int maxk, int flags) {
+      public KNNSearcher<NumberVector> kNNByObject(DistanceQuery<NumberVector> distanceQuery, int maxk, int flags) {
         return null; // Disable kNN queries, to force range queries to be tested.
       }
     };
@@ -93,8 +93,8 @@ public class DBOutlierDetectionTest extends AbstractOutlierAlgorithmTest {
     OutlierResult result = new ELKIBuilder<DBOutlierDetection<DoubleVector>>(DBOutlierDetection.class) //
         .with(DBOutlierDetection.Par.D_ID, 0.175) //
         .with(DBOutlierDetection.Par.P_ID, 0.98) //
-        .build().run(db);
-    testSingleScore(result, 1025, 0.0);
-    testAUC(db, "Noise", result, 0.97487179);
+        .build().autorun(db);
+    assertSingleScore(result, 1025, 0.0);
+    assertAUC(db, "Noise", result, 0.97487179);
   }
 }

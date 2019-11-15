@@ -20,7 +20,13 @@
  */
 package elki.datasource;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 import elki.datasource.filter.ObjectFilter;
@@ -28,7 +34,6 @@ import elki.datasource.parser.ArffParser;
 import elki.datasource.parser.NumberVectorLabelParser;
 import elki.datasource.parser.Parser;
 import elki.utilities.Priority;
-import elki.utilities.exceptions.AbortException;
 import elki.utilities.io.FileUtil;
 import elki.utilities.optionhandling.OptionID;
 import elki.utilities.optionhandling.parameterization.Parameterization;
@@ -51,13 +56,13 @@ public class FileBasedDatabaseConnection extends InputStreamDatabaseConnection {
    * @param parser the parser to provide a database
    * @param infile File to load the data from
    */
-  public FileBasedDatabaseConnection(List<? extends ObjectFilter> filters, Parser parser, File infile) {
+  public FileBasedDatabaseConnection(List<? extends ObjectFilter> filters, Parser parser, Path infile) {
     super(() -> {
       try {
-        return new BufferedInputStream(FileUtil.tryGzipInput(new FileInputStream(infile)));
+        return new BufferedInputStream(FileUtil.tryGzipInput(Files.newInputStream(infile)));
       }
       catch(IOException e) {
-        throw new AbortException("Could not load input file: " + infile, e);
+        throw new UncheckedIOException("Could not load input file: " + infile, e);
       }
     }, filters, parser);
   }
@@ -70,14 +75,7 @@ public class FileBasedDatabaseConnection extends InputStreamDatabaseConnection {
    * @param infile File to load the data from
    */
   public FileBasedDatabaseConnection(List<? extends ObjectFilter> filters, Parser parser, String infile) {
-    super(() -> {
-      try {
-        return new BufferedInputStream(FileUtil.tryGzipInput(new FileInputStream(infile)));
-      }
-      catch(IOException e) {
-        throw new AbortException("Could not load input file: " + infile, e);
-      }
-    }, filters, parser);
+    this(filters, parser, Paths.get(infile));
   }
 
   /**
@@ -105,7 +103,7 @@ public class FileBasedDatabaseConnection extends InputStreamDatabaseConnection {
     /**
      * Input stream to process.
      */
-    protected File infile;
+    protected Path infile;
 
     @Override
     public void configure(Parameterization config) {
@@ -113,7 +111,7 @@ public class FileBasedDatabaseConnection extends InputStreamDatabaseConnection {
       new FileParameter(INPUT_ID, FileParameter.FileType.INPUT_FILE) //
           .grab(config, x -> infile = x);
       Class<? extends Parser> defaultParser = NumberVectorLabelParser.class;
-      if(infile != null && (infile.getName().endsWith(".arff") || infile.getName().endsWith(".arff.gz"))) {
+      if(infile != null && (infile.getFileName().endsWith(".arff") || infile.getFileName().endsWith(".arff.gz"))) {
         defaultParser = ArffParser.class;
       }
       configParser(config, Parser.class, defaultParser);

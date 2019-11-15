@@ -20,7 +20,7 @@
  */
 package elki.clustering.uncertain;
 
-import elki.AbstractAlgorithm;
+import elki.Algorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.data.Clustering;
 import elki.data.DoubleVector;
@@ -29,7 +29,6 @@ import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.data.type.VectorFieldTypeInformation;
 import elki.data.uncertain.UncertainObject;
-import elki.database.Database;
 import elki.database.ProxyDatabase;
 import elki.database.datastore.DataStore;
 import elki.database.datastore.DataStoreFactory;
@@ -40,7 +39,6 @@ import elki.database.ids.DBIDs;
 import elki.database.relation.MaterializedRelation;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
-import elki.logging.Logging;
 import elki.result.Metadata;
 import elki.result.ResultUtil;
 import elki.utilities.documentation.Reference;
@@ -70,12 +68,7 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
     booktitle = "Proceedings of the VLDB Endowment, 8(12)", //
     url = "http://www.vldb.org/pvldb/vol8/p1976-schubert.pdf", //
     bibkey = "DBLP:journals/pvldb/SchubertKEZSZ15")
-public class CenterOfMassMetaClustering<C extends Clustering<?>> extends AbstractAlgorithm<C> implements ClusteringAlgorithm<C> {
-  /**
-   * Initialize a Logger.
-   */
-  private static final Logging LOG = Logging.getLogger(CenterOfMassMetaClustering.class);
-
+public class CenterOfMassMetaClustering<C extends Clustering<?>> implements ClusteringAlgorithm<C> {
   /**
    * The algorithm to be wrapped and run.
    */
@@ -90,18 +83,18 @@ public class CenterOfMassMetaClustering<C extends Clustering<?>> extends Abstrac
     this.inner = inner;
   }
 
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(UncertainObject.UNCERTAIN_OBJECT_FIELD);
+  }
+
   /**
    * This run method will do the wrapping.
-   * <p>
-   * Its called from {@link AbstractAlgorithm#run(Database)} and performs the
-   * call to the algorithms particular run method as well as the storing and
-   * comparison of the resulting Clusterings.
    *
-   * @param database Database
    * @param relation Data relation of uncertain objects
    * @return Clustering result
    */
-  public C run(Database database, Relation<? extends UncertainObject> relation) {
+  public C run(Relation<? extends UncertainObject> relation) {
     final int dim = RelationUtil.dimensionality(relation);
     DBIDs ids = relation.getDBIDs();
     // Build a relation storing the center of mass:
@@ -125,23 +118,12 @@ public class CenterOfMassMetaClustering<C extends Clustering<?>> extends Abstrac
   protected C runClusteringAlgorithm(Object parent, DBIDs ids, DataStore<DoubleVector> store, int dim, String title) {
     SimpleTypeInformation<DoubleVector> t = new VectorFieldTypeInformation<>(DoubleVector.FACTORY, dim);
     Relation<DoubleVector> sample = new MaterializedRelation<>(title, t, ids, store);
-    ProxyDatabase d = new ProxyDatabase(ids, sample);
-    C clusterResult = inner.run(d);
+    C clusterResult = inner.autorun(new ProxyDatabase(ids, sample));
     ResultUtil.removeRecursive(sample);
     ResultUtil.removeRecursive(clusterResult);
     Metadata.hierarchyOf(parent).addChild(sample);
     Metadata.hierarchyOf(sample).addChild(clusterResult);
     return clusterResult;
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(UncertainObject.UNCERTAIN_OBJECT_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return CenterOfMassMetaClustering.LOG;
   }
 
   /**
@@ -157,7 +139,7 @@ public class CenterOfMassMetaClustering<C extends Clustering<?>> extends Abstrac
 
     @Override
     public void configure(Parameterization config) {
-      ObjectParameter<ClusteringAlgorithm<C>> palgorithm = new ObjectParameter<>(AbstractAlgorithm.ALGORITHM_ID, ClusteringAlgorithm.class);
+      ObjectParameter<ClusteringAlgorithm<C>> palgorithm = new ObjectParameter<>(Algorithm.Utils.ALGORITHM_ID, ClusteringAlgorithm.class);
       palgorithm.grab(config, inner -> {
         if(inner.getInputTypeRestriction().length > 0 && //
         !inner.getInputTypeRestriction()[0].isAssignableFromType(TypeUtil.NUMBER_VECTOR_FIELD)) {

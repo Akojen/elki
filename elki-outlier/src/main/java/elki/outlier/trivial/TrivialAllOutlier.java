@@ -20,8 +20,6 @@
  */
 package elki.outlier.trivial;
 
-import elki.outlier.OutlierAlgorithm;
-import elki.AbstractAlgorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
@@ -31,7 +29,7 @@ import elki.database.ids.DBIDIter;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
-import elki.logging.Logging;
+import elki.outlier.OutlierAlgorithm;
 import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
 import elki.result.outlier.ProbabilisticOutlierScore;
@@ -45,12 +43,7 @@ import elki.utilities.Priority;
  * @since 0.4.0
  */
 @Priority(Priority.SUPPLEMENTARY - 50)
-public class TrivialAllOutlier extends AbstractAlgorithm<OutlierResult> implements OutlierAlgorithm {
-  /**
-   * Our logger.
-   */
-  private static final Logging LOG = Logging.getLogger(TrivialAllOutlier.class);
-
+public class TrivialAllOutlier implements OutlierAlgorithm {
   /**
    * Constructor.
    */
@@ -64,7 +57,7 @@ public class TrivialAllOutlier extends AbstractAlgorithm<OutlierResult> implemen
   }
 
   /**
-   * Run the actual algorithm.
+   * Run the trivial algorithm.
    * 
    * @param relation Relation
    * @return Result
@@ -77,10 +70,5 @@ public class TrivialAllOutlier extends AbstractAlgorithm<OutlierResult> implemen
     DoubleRelation scoreres = new MaterializedDoubleRelation("Trivial all-outlier score", relation.getDBIDs(), scores);
     OutlierScoreMeta meta = new ProbabilisticOutlierScore();
     return new OutlierResult(meta, scoreres);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 }

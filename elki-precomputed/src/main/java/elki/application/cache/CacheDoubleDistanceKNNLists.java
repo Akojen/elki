@@ -20,21 +20,22 @@
  */
 package elki.application.cache;
 
-import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 import elki.application.AbstractApplication;
 import elki.database.Database;
 import elki.database.StaticArrayDatabase;
 import elki.database.ids.DBIDIter;
+import elki.database.ids.DBIDRef;
 import elki.database.ids.DoubleDBIDListIter;
 import elki.database.ids.KNNList;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
 import elki.logging.Logging;
@@ -82,11 +83,11 @@ public class CacheDoubleDistanceKNNLists<O> extends AbstractApplication {
   /**
    * Output file.
    */
-  private File out;
+  private Path out;
 
   /**
    * Magic number to identify files.
-   * 
+   * <p>
    * Note, when cloning this class, and performing any incompatible change to
    * the file format, you should also change this magic ID!
    */
@@ -100,7 +101,7 @@ public class CacheDoubleDistanceKNNLists<O> extends AbstractApplication {
    * @param k Number of nearest neighbors
    * @param out Matrix output file
    */
-  public CacheDoubleDistanceKNNLists(Database database, Distance<? super O> distance, int k, File out) {
+  public CacheDoubleDistanceKNNLists(Database database, Distance<? super O> distance, int k, Path out) {
     super();
     this.database = database;
     this.distance = distance;
@@ -112,23 +113,24 @@ public class CacheDoubleDistanceKNNLists<O> extends AbstractApplication {
   public void run() {
     database.initialize();
     Relation<O> relation = database.getRelation(distance.getInputTypeRestriction());
-    KNNQuery<O> knnQ = new QueryBuilder<>(relation, distance).noCache().kNNQuery(k);
+    KNNSearcher<DBIDRef> knnQ = new QueryBuilder<>(relation, distance).noCache().kNNByDBID(k);
 
     // open file.
-    try (RandomAccessFile file = new RandomAccessFile(out, "rw");
-        FileChannel channel = file.getChannel();
+    try (FileChannel channel = FileChannel.open(out, //
+        StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE);
         // and acquire a file write lock
         FileLock lock = channel.lock()) {
-      // write magic header
-      file.writeInt(KNN_CACHE_MAGIC);
 
       int bufsize = k * 12 * 2 + 10; // Initial size, enough for 2 kNN.
       ByteBuffer buffer = ByteBuffer.allocateDirect(bufsize);
 
-      FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("Computing kNN", relation.size(), LOG) : null;
+      // write magic header
+      buffer.putInt(KNN_CACHE_MAGIC).flip();
+      channel.write(buffer);
 
+      FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("Computing kNN", relation.size(), LOG) : null;
       for(DBIDIter it = relation.iterDBIDs(); it.valid(); it.advance()) {
-        final KNNList nn = knnQ.getKNNForDBID(it, k);
+        final KNNList nn = knnQ.getKNN(it, k);
         final int nnsize = nn.size();
 
         // Grow the buffer when needed:
@@ -203,7 +205,7 @@ public class CacheDoubleDistanceKNNLists<O> extends AbstractApplication {
     /**
      * Output file.
      */
-    private File out = null;
+    private Path out = null;
 
     @Override
     public void configure(Parameterization config) {

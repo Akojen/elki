@@ -96,9 +96,15 @@ public class TrimmedMeanApproach<N> extends AbstractNeighborhoodOutlier<N> {
    * @param p Parameter p
    * @param npredf Neighborhood factory.
    */
-  protected TrimmedMeanApproach(NeighborSetPredicate.Factory<N> npredf, double p) {
+  public TrimmedMeanApproach(NeighborSetPredicate.Factory<N> npredf, double p) {
     super(npredf);
     this.p = p;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    // Get one dimensional attribute for analysis.
+    return TypeUtil.array(getNeighborSetPredicateFactory().getInputTypeRestriction(), TypeUtil.NUMBER_VECTOR_FIELD_1D);
   }
 
   /**
@@ -190,19 +196,8 @@ public class TrimmedMeanApproach<N> extends AbstractNeighborhoodOutlier<N> {
     return or;
   }
 
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    // Get one dimensional attribute for analysis.
-    return TypeUtil.array(getNeighborSetPredicateFactory().getInputTypeRestriction(), TypeUtil.NUMBER_VECTOR_FIELD_1D);
-  }
-
   /**
-   * Par.
+   * Parameterizer.
    * 
    * @author Ahmed Hettab
    * 

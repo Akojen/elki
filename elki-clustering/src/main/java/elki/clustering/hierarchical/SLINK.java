@@ -20,7 +20,7 @@
  */
 package elki.clustering.hierarchical;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
@@ -33,6 +33,7 @@ import elki.database.query.distance.DistanceQuery;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
 import elki.distance.PrimitiveDistance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.utilities.Alias;
@@ -40,6 +41,9 @@ import elki.utilities.Priority;
 import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
+import elki.utilities.optionhandling.Parameterizer;
+import elki.utilities.optionhandling.parameterization.Parameterization;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Implementation of the efficient Single-Link Algorithm SLINK of R. Sibson.
@@ -71,11 +75,16 @@ import elki.utilities.documentation.Title;
     bibkey = "DBLP:journals/cj/Sibson73")
 @Alias({ "single-link", "single-linkage" })
 @Priority(Priority.RECOMMENDED)
-public class SLINK<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, PointerHierarchyRepresentationResult> implements HierarchicalClusteringAlgorithm {
+public class SLINK<O> implements HierarchicalClusteringAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(SLINK.class);
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * Constructor.
@@ -83,7 +92,13 @@ public class SLINK<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>
    * @param distance Distance function
    */
   public SLINK(Distance<? super O> distance) {
-    super(distance);
+    super();
+    this.distance = distance;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -115,8 +130,8 @@ public class SLINK<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>
     log.incrementProcessed(progress);
 
     // Optimized branch
-    if(getDistance() instanceof PrimitiveDistance) {
-      PrimitiveDistance<? super O> distf = (PrimitiveDistance<? super O>) getDistance();
+    if(distance instanceof PrimitiveDistance) {
+      PrimitiveDistance<? super O> distf = (PrimitiveDistance<? super O>) distance;
       for(id.seek(1); id.valid(); id.advance()) {
         step2primitive(id, it, id.getOffset(), relation, distf, m);
         process(id, aids, it, id.getOffset(), pi, lambda, m); // SLINK or CLINK
@@ -138,7 +153,7 @@ public class SLINK<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>
     m.destroy();
     m = null;
 
-    return new PointerHierarchyRepresentationResult(ids, pi, lambda, getDistance().isSquared());
+    return new PointerHierarchyRepresentationResult(ids, pi, lambda, distance.isSquared());
   }
 
   /**
@@ -262,12 +277,9 @@ public class SLINK<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>
     }
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
+  /**
+   * Get the (static) class logger.
+   */
   protected Logging getLogger() {
     return LOG;
   }
@@ -277,7 +289,18 @@ public class SLINK<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>
    *
    * @author Erich Schubert
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
+    @Override
+    public void configure(Parameterization config) {
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
+    }
+
     @Override
     public SLINK<O> make() {
       return new SLINK<>(distance);

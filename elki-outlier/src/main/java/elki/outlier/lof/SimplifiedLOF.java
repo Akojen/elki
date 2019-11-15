@@ -20,7 +20,7 @@
  */
 package elki.outlier.lof;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
@@ -28,11 +28,12 @@ import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.WritableDoubleDataStore;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.logging.progress.StepProgress;
@@ -42,9 +43,11 @@ import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
 import elki.result.outlier.QuotientOutlierScoreMeta;
 import elki.utilities.documentation.Reference;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * A simplified version of the original LOF algorithm, which does not use the
@@ -60,7 +63,7 @@ import elki.utilities.optionhandling.parameters.IntParameter;
  * @author Erich Schubert
  * @since 0.5.5
  *
- * @has - - - KNNQuery
+ * @has - - - KNNSearcher
  *
  * @param <O> the type of data objects handled by this algorithm
  */
@@ -69,25 +72,37 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     booktitle = "Data Mining and Knowledge Discovery 28(1)", //
     url = "https://doi.org/10.1007/s10618-012-0300-z", //
     bibkey = "DBLP:journals/datamine/SchubertZK14")
-public class SimplifiedLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class SimplifiedLOF<O> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(SimplifiedLOF.class);
 
   /**
-   * The number of neighbors to query, excluding the query point.
+   * Distance function used.
    */
-  protected int k;
+  protected Distance<? super O> distance;
+
+  /**
+   * The number of neighbors to query, plus the query point.
+   */
+  protected int kplus;
 
   /**
    * Constructor.
-   *
-   * @param k the value of k
+   * 
+   * @param distance Distance function
+   * @param k the number of neighbors
    */
-  public SimplifiedLOF(int k, Distance<? super O> distance) {
-    super(distance);
-    this.k = k + 1; // + query point
+  public SimplifiedLOF(Distance<? super O> distance, int k) {
+    super();
+    this.distance = distance;
+    this.kplus = k + 1; // + query point
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -101,7 +116,7 @@ public class SimplifiedLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? 
     DBIDs ids = relation.getDBIDs();
 
     LOG.beginStep(stepprog, 1, "Materializing neighborhoods w.r.t. distance function.");
-    KNNQuery<O> knnq = new QueryBuilder<>(relation, distance).precomputed().kNNQuery(k);
+    KNNSearcher<DBIDRef> knnq = new QueryBuilder<>(relation, distance).precomputed().kNNByDBID(kplus);
 
     // Compute LRDs
     LOG.beginStep(stepprog, 2, "Computing densities.");
@@ -131,10 +146,10 @@ public class SimplifiedLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? 
    * @param knnq kNN query class
    * @param lrds Density output
    */
-  private void computeSimplifiedLRDs(DBIDs ids, KNNQuery<O> knnq, WritableDoubleDataStore lrds) {
+  private void computeSimplifiedLRDs(DBIDs ids, KNNSearcher<DBIDRef> knnq, WritableDoubleDataStore lrds) {
     FiniteProgress lrdsProgress = LOG.isVerbose() ? new FiniteProgress("Densities", ids.size(), LOG) : null;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
-      final KNNList neighbors = knnq.getKNNForDBID(iter, k);
+      final KNNList neighbors = knnq.getKNN(iter, kplus);
       double sum = 0.0;
       int count = 0;
       for(DoubleDBIDListIter neighbor = neighbors.iter(); neighbor.valid(); neighbor.advance()) {
@@ -161,12 +176,12 @@ public class SimplifiedLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? 
    * @param lofs SLOF output storage
    * @param lofminmax Minimum and maximum scores
    */
-  private void computeSimplifiedLOFs(DBIDs ids, KNNQuery<O> knnq, WritableDoubleDataStore slrds, WritableDoubleDataStore lofs, DoubleMinMax lofminmax) {
+  private void computeSimplifiedLOFs(DBIDs ids, KNNSearcher<DBIDRef> knnq, WritableDoubleDataStore slrds, WritableDoubleDataStore lofs, DoubleMinMax lofminmax) {
     FiniteProgress progressLOFs = LOG.isVerbose() ? new FiniteProgress("Simplified LOF scores", ids.size(), LOG) : null;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
       final double lof;
       final double lrdp = slrds.doubleValue(iter);
-      final KNNList neighbors = knnq.getKNNForDBID(iter, k);
+      final KNNList neighbors = knnq.getKNN(iter, kplus);
       if(!Double.isInfinite(lrdp)) {
         double sum = 0.;
         int count = 0;
@@ -196,16 +211,6 @@ public class SimplifiedLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? 
     LOG.ensureCompleted(progressLOFs);
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
@@ -215,7 +220,12 @@ public class SimplifiedLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? 
    *
    * @param <O> Object type
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
     /**
      * The neighborhood size to use.
      */
@@ -223,7 +233,8 @@ public class SimplifiedLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? 
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(LOF.Par.K_ID) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> k = x);
@@ -231,7 +242,7 @@ public class SimplifiedLOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? 
 
     @Override
     public SimplifiedLOF<O> make() {
-      return new SimplifiedLOF<>(k, distance);
+      return new SimplifiedLOF<>(distance, k);
     }
   }
 }

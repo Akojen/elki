@@ -41,8 +41,8 @@ public class LDFTest extends AbstractOutlierAlgorithmTest {
     OutlierResult result = new ELKIBuilder<LDF<DoubleVector>>(LDF.class) //
         .with(LDF.Par.K_ID, 10) //
         .with(LDF.Par.H_ID, 1) //
-        .build().run(db);
-    testSingleScore(result, 1293, 3.158819);
-    testAUC(db, "Noise", result, 0.9127619);
+        .build().autorun(db);
+    assertSingleScore(result, 1293, 3.158819);
+    assertAUC(db, "Noise", result, 0.9127619);
   }
 }

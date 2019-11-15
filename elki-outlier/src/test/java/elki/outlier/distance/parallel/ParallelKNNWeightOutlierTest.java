@@ -40,8 +40,8 @@ public class ParallelKNNWeightOutlierTest extends AbstractOutlierAlgorithmTest {
   public void testKNNWeightOutlier() {
     Database db = makeSimpleDatabase(UNITTEST + "outlier-3d-3clusters.ascii", 960);
     OutlierResult result = new ELKIBuilder<ParallelKNNWeightOutlier<DoubleVector>>(ParallelKNNWeightOutlier.class) //
-        .with(KNNWeightOutlier.Par.K_ID, 4).build().run(db);
-    testSingleScore(result, 945, 2.384117261027324);
-    testAUC(db, "Noise", result, 0.9912777777777778);
+        .with(KNNWeightOutlier.Par.K_ID, 4).build().autorun(db);
+    assertSingleScore(result, 945, 2.384117261027324);
+    assertAUC(db, "Noise", result, 0.9912777777777778);
   }
 }

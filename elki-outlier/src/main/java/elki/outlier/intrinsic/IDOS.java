@@ -20,7 +20,7 @@
  */
 package elki.outlier.intrinsic;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
@@ -29,11 +29,12 @@ import elki.database.datastore.DoubleDataStore;
 import elki.database.datastore.WritableDoubleDataStore;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.logging.progress.StepProgress;
@@ -47,6 +48,7 @@ import elki.result.outlier.QuotientOutlierScoreMeta;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.constraints.GreaterEqualConstraint;
 import elki.utilities.optionhandling.parameterization.Parameterization;
@@ -74,11 +76,16 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
     booktitle = "NII Technical Report (NII-2015-003E)", //
     url = "http://www.nii.ac.jp/TechReports/15-003E.html", //
     bibkey = "tr/nii/BrunkenHZ15")
-public class IDOS<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class IDOS<O> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(IDOS.class);
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * kNN for the context set (ID computation).
@@ -104,10 +111,16 @@ public class IDOS<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @param kr the neighborhood size to use in score computation
    */
   public IDOS(Distance<? super O> distance, IntrinsicDimensionalityEstimator estimator, int kc, int kr) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.estimator = estimator;
     this.k_c = kc;
     this.k_r = kr;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -121,7 +134,7 @@ public class IDOS<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
     if(stepprog != null) {
       stepprog.beginStep(1, "Precomputing neighborhoods", LOG);
     }
-    KNNQuery<O> knnQ = new QueryBuilder<>(relation, distance).precomputed().kNNQuery(Math.max(k_c, k_r) + 1);
+    KNNSearcher<DBIDRef> knnQ = new QueryBuilder<>(relation, distance).precomputed().kNNByDBID(Math.max(k_c, k_r) + 1);
     DBIDs ids = relation.getDBIDs();
 
     if(stepprog != null) {
@@ -148,7 +161,7 @@ public class IDOS<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @param knnQ the KNN query
    * @return The computed intrinsic dimensionalities.
    */
-  protected DoubleDataStore computeIDs(DBIDs ids, KNNQuery<O> knnQ) {
+  protected DoubleDataStore computeIDs(DBIDs ids, KNNSearcher<DBIDRef> knnQ) {
     WritableDoubleDataStore intDims = DataStoreUtil.makeDoubleStorage(ids, DataStoreFactory.HINT_HOT | DataStoreFactory.HINT_TEMP);
     FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("Intrinsic dimensionality", ids.size(), LOG) : null;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
@@ -175,11 +188,11 @@ public class IDOS<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @param idosminmax Output of minimum and maximum, for metadata
    * @return ID scores
    */
-  protected DoubleDataStore computeIDOS(DBIDs ids, KNNQuery<O> knnQ, DoubleDataStore intDims, DoubleMinMax idosminmax) {
+  protected DoubleDataStore computeIDOS(DBIDs ids, KNNSearcher<DBIDRef> knnQ, DoubleDataStore intDims, DoubleMinMax idosminmax) {
     WritableDoubleDataStore ldms = DataStoreUtil.makeDoubleStorage(ids, DataStoreFactory.HINT_STATIC);
     FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("ID Outlier Scores for objects", ids.size(), LOG) : null;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
-      final KNNList neighbors = knnQ.getKNNForDBID(iter, k_r);
+      final KNNList neighbors = knnQ.getKNN(iter, k_r);
       double sum = 0.;
       int cnt = 0;
       for(DoubleDBIDListIter neighbor = neighbors.iter(); neighbor.valid(); neighbor.advance()) {
@@ -203,23 +216,13 @@ public class IDOS<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
     return ldms;
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
    * @author Jonathan von Brünken
    * @author Erich Schubert
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * The class used for estimating the intrinsic dimensionality.
      */
@@ -235,6 +238,11 @@ public class IDOS<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
      * used for the GED computation.
      */
     public static final OptionID KC_ID = new OptionID("idos.kc", "Context set size (ID estimation).");
+
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
 
     /**
      * Estimator for intrinsic dimensionality.
@@ -253,7 +261,8 @@ public class IDOS<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new ObjectParameter<IntrinsicDimensionalityEstimator>(ESTIMATOR_ID, IntrinsicDimensionalityEstimator.class, ALIDEstimator.class) //
           .grab(config, x -> estimator = x);
       new IntParameter(KC_ID) //

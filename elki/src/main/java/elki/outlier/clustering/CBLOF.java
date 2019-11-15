@@ -25,7 +25,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.clustering.kmeans.SortMeans;
 import elki.data.Cluster;
@@ -55,8 +55,8 @@ import elki.result.outlier.OutlierScoreMeta;
 import elki.result.outlier.QuotientOutlierScoreMeta;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
@@ -87,11 +87,16 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
     booktitle = "Pattern Recognition Letters 24(9-10)", //
     url = "https://doi.org/10.1016/S0167-8655(03)00003-5", //
     bibkey = "DBLP:journals/prl/HeXD03")
-public class CBLOF<O extends NumberVector> extends AbstractDistanceBasedAlgorithm<NumberVectorDistance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class CBLOF<O extends NumberVector> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(CBLOF.class);
+
+  /**
+   * Distance function used.
+   */
+  protected NumberVectorDistance<? super O> distance;
 
   /**
    * The clustering algorithm to use.
@@ -127,25 +132,26 @@ public class CBLOF<O extends NumberVector> extends AbstractDistanceBasedAlgorith
    *        the large and the small clusters
    */
   public CBLOF(NumberVectorDistance<? super O> distance, ClusteringAlgorithm<Clustering<MeanModel>> clusteringAlgorithm, double alpha, double beta) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.clusteringAlgorithm = clusteringAlgorithm;
     this.alpha = alpha;
     this.beta = beta;
   }
 
   /**
-   * Runs the CBLOF algorithm on the given database.
+   * Run CBLOF.
    *
-   * @param database Database to query
-   * @param relation Data to process
-   * @return CBLOF outlier result
+   * @param database Database to run on
+   * @param relation Relation to use for CBLOF computation
+   * @return Outlier result
    */
   public OutlierResult run(Database database, Relation<O> relation) {
     StepProgress stepprog = LOG.isVerbose() ? new StepProgress("CBLOF", 3) : null;
     DBIDs ids = relation.getDBIDs();
 
     LOG.beginStep(stepprog, 1, "Computing clustering.");
-    Clustering<MeanModel> clustering = clusteringAlgorithm.run(database);
+    Clustering<MeanModel> clustering = clusteringAlgorithm.autorun(database);
 
     LOG.beginStep(stepprog, 2, "Computing boundary between large and small clusters.");
     List<? extends Cluster<MeanModel>> clusters = clustering.getAllClusters();
@@ -213,7 +219,6 @@ public class CBLOF<O extends NumberVector> extends AbstractDistanceBasedAlgorith
    * @param smallClusters Small clusters output
    */
   private void computeCBLOFs(Relation<O> relation, WritableDoubleDataStore cblofs, DoubleMinMax cblofMinMax, List<? extends Cluster<MeanModel>> largeClusters, List<? extends Cluster<MeanModel>> smallClusters) {
-    NumberVectorDistance<? super O> distance = getDistance();
     List<NumberVector> largeClusterMeans = new ArrayList<>(largeClusters.size());
     for(Cluster<MeanModel> largeCluster : largeClusters) {
       NumberVector mean = ModelUtil.getPrototypeOrCentroid(largeCluster.getModel(), relation, largeCluster.getIDs());
@@ -258,12 +263,7 @@ public class CBLOF<O extends NumberVector> extends AbstractDistanceBasedAlgorith
 
   @Override
   public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -321,7 +321,7 @@ public class CBLOF<O extends NumberVector> extends AbstractDistanceBasedAlgorith
 
     @Override
     public void configure(Parameterization config) {
-      new ObjectParameter<NumberVectorDistance<? super O>>(AbstractDistanceBasedAlgorithm.Par.DISTANCE_FUNCTION_ID, NumberVectorDistance.class, EuclideanDistance.class) //
+      new ObjectParameter<NumberVectorDistance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, NumberVectorDistance.class, EuclideanDistance.class) //
           .grab(config, x -> distance = x);
       new DoubleParameter(ALPHPA_ID)//
           .addConstraint(CommonConstraints.LESS_THAN_ONE_DOUBLE)//

@@ -20,7 +20,7 @@
  */
 package elki.clustering.kmedoids;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.clustering.ClusteringAlgorithmUtil;
 import elki.clustering.kmeans.KMeans;
@@ -40,6 +40,7 @@ import elki.database.query.QueryBuilder;
 import elki.database.query.distance.DistanceQuery;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.IndefiniteProgress;
 import elki.logging.statistics.DoubleStatistic;
@@ -52,6 +53,7 @@ import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.exceptions.AbortException;
 import elki.utilities.exceptions.NotImplementedException;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
@@ -74,7 +76,7 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
  * @navassoc - - - MedoidModel
  * @has - - - KMedoidsInitialization
  *
- * @param <V> vector datatype
+ * @param <O> object datatype
  */
 @Title("Partioning Around Medoids")
 @Priority(Priority.IMPORTANT)
@@ -87,11 +89,16 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
     booktitle = "Finding Groups in Data: An Introduction to Cluster Analysis", //
     url = "https://doi.org/10.1002/9780470316801.ch2", //
     bibkey = "doi:10.1002/9780470316801.ch2")
-public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, Clustering<MedoidModel>> implements ClusteringAlgorithm<Clustering<MedoidModel>> {
+public class PAM<O> implements ClusteringAlgorithm<Clustering<MedoidModel>> {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(PAM.class);
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * The number of clusters to produce.
@@ -106,7 +113,7 @@ public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, 
   /**
    * Method to choose initial means.
    */
-  protected KMedoidsInitialization<V> initializer;
+  protected KMedoidsInitialization<O> initializer;
 
   /**
    * Constructor.
@@ -116,14 +123,20 @@ public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, 
    * @param maxiter Maxiter parameter
    * @param initializer Function to generate the initial means
    */
-  public PAM(Distance<? super V> distance, int k, int maxiter, KMedoidsInitialization<V> initializer) {
-    super(distance);
+  public PAM(Distance<? super O> distance, int k, int maxiter, KMedoidsInitialization<O> initializer) {
+    super();
     if(k > 0x7FFF) {
       throw new NotImplementedException("PAM supports at most " + 0x7FFF + " clusters.");
     }
+    this.distance = distance;
     this.k = k;
     this.maxiter = maxiter;
     this.initializer = initializer;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -132,8 +145,8 @@ public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, 
    * @param relation relation to use
    * @return result
    */
-  public Clustering<MedoidModel> run(Relation<V> relation) {
-    DistanceQuery<V> distQ = new QueryBuilder<>(relation, distance).precomputed().distanceQuery();
+  public Clustering<MedoidModel> run(Relation<O> relation) {
+    DistanceQuery<O> distQ = new QueryBuilder<>(relation, distance).precomputed().distanceQuery();
     DBIDs ids = relation.getDBIDs();
     ArrayModifiableDBIDs medoids = initialMedoids(distQ, ids);
 
@@ -161,7 +174,7 @@ public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, 
    * @param ids IDs to choose from
    * @return Initial medoids
    */
-  protected ArrayModifiableDBIDs initialMedoids(DistanceQuery<V> distQ, DBIDs ids) {
+  protected ArrayModifiableDBIDs initialMedoids(DistanceQuery<O> distQ, DBIDs ids) {
     if(getLogger().isStatistics()) {
       getLogger().statistics(new StringStatistic(getClass().getName() + ".initialization", initializer.toString()));
     }
@@ -183,7 +196,7 @@ public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, 
    * @param medoids Current medoids
    * @param assignment Cluster assignment output
    */
-  protected void run(DistanceQuery<V> distQ, DBIDs ids, ArrayModifiableDBIDs medoids, WritableIntegerDataStore assignment) {
+  protected void run(DistanceQuery<O> distQ, DBIDs ids, ArrayModifiableDBIDs medoids, WritableIntegerDataStore assignment) {
     new Instance(distQ, ids, assignment).run(medoids, maxiter);
   }
 
@@ -385,12 +398,9 @@ public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, 
 
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
+  /**
+   * Get the static class logger.
+   */
   protected Logging getLogger() {
     return LOG;
   }
@@ -400,7 +410,7 @@ public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, 
    *
    * @author Erich Schubert
    */
-  public static class Par<V> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super V>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * The number of clusters to produce.
      */
@@ -414,15 +424,21 @@ public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, 
     /**
      * Method to choose initial means.
      */
-    protected KMedoidsInitialization<V> initializer;
+    protected KMedoidsInitialization<O> initializer;
+
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(KMeans.K_ID) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> k = x);
-      new ObjectParameter<KMedoidsInitialization<V>>(KMeans.INIT_ID, KMedoidsInitialization.class, defaultInitializer()) //
+      new ObjectParameter<KMedoidsInitialization<O>>(KMeans.INIT_ID, KMedoidsInitialization.class, defaultInitializer()) //
           .grab(config, x -> initializer = x);
       new IntParameter(KMeans.MAXITER_ID, 0) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ZERO_INT) //
@@ -440,7 +456,7 @@ public class PAM<V> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, 
     }
 
     @Override
-    public PAM<V> make() {
+    public PAM<O> make() {
       return new PAM<>(distance, k, maxiter, initializer);
     }
   }

@@ -22,7 +22,6 @@ package elki.clustering.subspace;
 
 import java.util.*;
 
-import elki.AbstractAlgorithm;
 import elki.clustering.optics.CorrelationClusterOrder;
 import elki.clustering.optics.GeneralizedOPTICS;
 import elki.data.*;
@@ -31,11 +30,10 @@ import elki.data.type.SimpleTypeInformation;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.data.type.VectorFieldTypeInformation;
-import elki.database.Database;
 import elki.database.datastore.*;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.range.RangeQuery;
+import elki.database.query.range.RangeSearcher;
 import elki.database.relation.MaterializedRelation;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
@@ -97,7 +95,7 @@ import net.jafama.FastMath;
     booktitle = "Proc. 12th Int. Conf. on Database Systems for Advanced Applications (DASFAA)", //
     url = "https://doi.org/10.1007/978-3-540-71703-4_15", //
     bibkey = "DBLP:conf/dasfaa/AchtertBKKMZ07")
-public class DiSH<V extends NumberVector> extends AbstractAlgorithm<Clustering<SubspaceModel>> implements SubspaceClusteringAlgorithm<SubspaceModel> {
+public class DiSH<V extends NumberVector> implements SubspaceClusteringAlgorithm<SubspaceModel> {
   /**
    * The logger for this class.
    */
@@ -146,16 +144,22 @@ public class DiSH<V extends NumberVector> extends AbstractAlgorithm<Clustering<S
     this.strategy = strategy;
   }
 
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
+  }
+
   /**
    * Performs the DiSH algorithm on the given database.
    *
    * @param relation Relation to process
+   * @return Clustering
    */
-  public Clustering<SubspaceModel> run(Database db, Relation<V> relation) {
+  public Clustering<SubspaceModel> run(Relation<V> relation) {
     if(minpts >= relation.size()) {
       throw new AbortException("Parameter minpts is chosen unreasonably large. This won't yield meaningful results.");
     }
-    DiSHClusterOrder opticsResult = new Instance(db, relation).run();
+    DiSHClusterOrder opticsResult = new Instance(relation).run();
 
     if(LOG.isVerbose()) {
       LOG.verbose("Compute Clusters.");
@@ -615,16 +619,6 @@ public class DiSH<V extends NumberVector> extends AbstractAlgorithm<Clustering<S
     return FastMath.sqrt(sqrDist);
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * OPTICS variant used by DiSH internally.
    *
@@ -682,18 +676,12 @@ public class DiSH<V extends NumberVector> extends AbstractAlgorithm<Clustering<S
     private WritableDataStore<long[]> tmpPreferenceVectors;
 
     /**
-     * The DiSH preprocessor.
-     */
-    // private DiSHPreferenceVectorIndex.Factory<V> dishPreprocessor;
-
-    /**
      * Constructor.
      *
-     * @param db Database
      * @param relation Relation
      */
-    public Instance(Database db, Relation<V> relation) {
-      super(db, relation);
+    public Instance(Relation<V> relation) {
+      super(relation.getDBIDs());
       DBIDs ids = relation.getDBIDs();
       this.clusterOrder = DBIDUtil.newArray(ids.size());
       this.relation = relation;
@@ -713,9 +701,9 @@ public class DiSH<V extends NumberVector> extends AbstractAlgorithm<Clustering<S
       FiniteProgress progress = LOG.isVerbose() ? new FiniteProgress("Preprocessing preference vector", relation.size(), LOG) : null;
 
       final int dim = RelationUtil.dimensionality(relation);
-      ArrayList<RangeQuery<V>> rangeQueries = new ArrayList<>(dim);
+      ArrayList<RangeSearcher<DBIDRef>> rangeQueries = new ArrayList<>(dim);
       for(int d = 0; d < dim; d++) {
-        rangeQueries.add(new QueryBuilder<>(relation, new OnedimensionalDistance(d)).rangeQuery(epsilon));
+        rangeQueries.add(new QueryBuilder<>(relation, new OnedimensionalDistance(d)).rangeByDBID(epsilon));
       }
 
       StringBuilder msg = LOG.isDebugging() ? new StringBuilder() : null;
@@ -730,7 +718,7 @@ public class DiSH<V extends NumberVector> extends AbstractAlgorithm<Clustering<S
         // determine neighbors in each dimension
         ModifiableDBIDs[] allNeighbors = new ModifiableDBIDs[dim];
         for(int d = 0; d < dim; d++) {
-          allNeighbors[d] = DBIDUtil.newHashSet(rangeQueries.get(d).getRangeForDBID(it, epsilon));
+          allNeighbors[d] = DBIDUtil.newHashSet(rangeQueries.get(d).getRange(it, epsilon));
         }
 
         if(msg != null) {

@@ -20,7 +20,6 @@
  */
 package elki.outlier.spatial;
 
-import elki.outlier.spatial.neighborhood.NeighborSetPredicate;
 import elki.data.NumberVector;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
@@ -34,10 +33,10 @@ import elki.database.ids.DBIDs;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
-import elki.logging.Logging;
 import elki.math.DoubleMinMax;
 import elki.math.Mean;
 import elki.math.MeanVariance;
+import elki.outlier.spatial.neighborhood.NeighborSetPredicate;
 import elki.result.Metadata;
 import elki.result.outlier.BasicOutlierScoreMeta;
 import elki.result.outlier.OutlierResult;
@@ -79,17 +78,18 @@ import elki.utilities.documentation.Title;
     bibkey = "DBLP:journals/geoinformatica/ShekharLZ03")
 public class CTLuZTestOutlier<N> extends AbstractNeighborhoodOutlier<N> {
   /**
-   * The logger for this class.
-   */
-  private static final Logging LOG = Logging.getLogger(CTLuZTestOutlier.class);
-
-  /**
    * Constructor.
    * 
    * @param npredf Neighbor predicate
    */
   public CTLuZTestOutlier(NeighborSetPredicate.Factory<N> npredf) {
     super(npredf);
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    // FIXME: force relation 2 different from relation 1?
+    return TypeUtil.array(getNeighborSetPredicateFactory().getInputTypeRestriction(), TypeUtil.NUMBER_VECTOR_FIELD_1D);
   }
 
   /**
@@ -140,16 +140,6 @@ public class CTLuZTestOutlier<N> extends AbstractNeighborhoodOutlier<N> {
     OutlierResult or = new OutlierResult(scoreMeta, scoreResult);
     Metadata.hierarchyOf(or).addChild(npred);
     return or;
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getNeighborSetPredicateFactory().getInputTypeRestriction(), TypeUtil.NUMBER_VECTOR_FIELD_1D);
   }
 
   /**

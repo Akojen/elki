@@ -22,7 +22,6 @@ package elki.outlier;
 
 import static elki.math.linearalgebra.VMath.*;
 
-import elki.AbstractAlgorithm;
 import elki.data.NumberVector;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
@@ -34,7 +33,6 @@ import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
-import elki.logging.Logging;
 import elki.math.DoubleMinMax;
 import elki.math.MathUtil;
 import elki.math.linearalgebra.CovarianceMatrix;
@@ -45,8 +43,8 @@ import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
 import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Title;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.Flag;
 
@@ -63,12 +61,7 @@ import net.jafama.FastMath;
  */
 @Title("Gaussian Model Outlier Detection")
 @Description("Fit a multivariate gaussian model onto the data, and use the PDF to compute an outlier score.")
-public class GaussianModel<V extends NumberVector> extends AbstractAlgorithm<OutlierResult> implements OutlierAlgorithm {
-  /**
-   * The logger for this class.
-   */
-  private static final Logging LOG = Logging.getLogger(GaussianModel.class);
-
+public class GaussianModel<V extends NumberVector> implements OutlierAlgorithm {
   /**
    * Invert the result
    */
@@ -82,6 +75,11 @@ public class GaussianModel<V extends NumberVector> extends AbstractAlgorithm<Out
   public GaussianModel(boolean invert) {
     super();
     this.invert = invert;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
   }
 
   /**
@@ -131,16 +129,6 @@ public class GaussianModel<V extends NumberVector> extends AbstractAlgorithm<Out
     }
     DoubleRelation res = new MaterializedDoubleRelation("Gaussian Model Outlier Score", relation.getDBIDs(), oscores);
     return new OutlierResult(meta, res);
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

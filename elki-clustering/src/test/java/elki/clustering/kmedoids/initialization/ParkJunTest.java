@@ -48,9 +48,9 @@ public class ParkJunTest extends AbstractClusterAlgorithmTest {
     Clustering<?> result = new ELKIBuilder<SingleAssignmentKMeans<DoubleVector>>(SingleAssignmentKMeans.class) //
         .with(KMeans.K_ID, 5) //
         .with(KMeans.INIT_ID, ParkJun.class) //
-        .build().run(db);
-    testFMeasure(db, result, 0.5872566);
-    testClusterSizes(result, new int[] { 2, 9, 110, 422, 457 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.5872566);
+    assertClusterSizes(result, new int[] { 2, 9, 110, 422, 457 });
   }
 
   /**
@@ -67,8 +67,8 @@ public class ParkJunTest extends AbstractClusterAlgorithmTest {
         .with(CLARA.Par.NOKEEPMED_ID) //
         .with(CLARA.Par.SAMPLESIZE_ID, 10) //
         .with(CLARA.Par.RANDOM_ID, 0) //
-        .build().run(db);
-    testFMeasure(db, result, 0.7840668);
-    testClusterSizes(result, new int[] { 78, 125, 200, 200, 397 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.7840668);
+    assertClusterSizes(result, new int[] { 78, 125, 200, 200, 397 });
   }
 }

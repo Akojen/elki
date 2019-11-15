@@ -23,8 +23,7 @@ package elki.classification;
 import java.util.ArrayList;
 import java.util.Collections;
 
-import elki.AbstractAlgorithm;
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.ClassLabel;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
@@ -32,17 +31,15 @@ import elki.database.Database;
 import elki.database.ids.DoubleDBIDListIter;
 import elki.database.ids.KNNList;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
 import elki.distance.minkowski.EuclideanDistance;
-import elki.logging.Logging;
 import elki.utilities.Priority;
 import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Title;
-import elki.utilities.exceptions.AbortException;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
@@ -63,12 +60,7 @@ import it.unimi.dsi.fastutil.objects.ObjectIterator;
 @Title("kNN-classifier")
 @Description("Lazy classifier classifies a given instance to the majority class of the k-nearest neighbors.")
 @Priority(Priority.IMPORTANT)
-public class KNNClassifier<O> extends AbstractAlgorithm<Void> implements Classifier<O> {
-  /**
-   * The logger for this class.
-   */
-  private static final Logging LOG = Logging.getLogger(KNNClassifier.class);
-
+public class KNNClassifier<O> implements Classifier<O> {
   /**
    * Holds the value of @link #K_PARAM}.
    */
@@ -77,7 +69,7 @@ public class KNNClassifier<O> extends AbstractAlgorithm<Void> implements Classif
   /**
    * kNN query class.
    */
-  protected KNNQuery<O> knnq;
+  protected KNNSearcher<O> knnq;
 
   /**
    * Class label representation.
@@ -102,16 +94,21 @@ public class KNNClassifier<O> extends AbstractAlgorithm<Void> implements Classif
   }
 
   @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
+  }
+
+  @Override
   public void buildClassifier(Database database, Relation<? extends ClassLabel> labels) {
     Relation<O> relation = database.getRelation(distance.getInputTypeRestriction());
-    this.knnq = new QueryBuilder<>(relation, distance).kNNQuery(k);
+    this.knnq = new QueryBuilder<>(relation, distance).kNNByObject(k);
     this.labelrep = labels;
   }
 
   @Override
   public ClassLabel classify(O instance) {
     Object2IntOpenHashMap<ClassLabel> count = new Object2IntOpenHashMap<>();
-    KNNList query = knnq.getKNNForObject(instance, k);
+    KNNList query = knnq.getKNN(instance, k);
     for(DoubleDBIDListIter neighbor = query.iter(); neighbor.valid(); neighbor.advance()) {
       count.addTo(labelrep.get(neighbor), 1);
     }
@@ -131,7 +128,7 @@ public class KNNClassifier<O> extends AbstractAlgorithm<Void> implements Classif
   public double[] classProbabilities(O instance, ArrayList<ClassLabel> labels) {
     int[] occurences = new int[labels.size()];
 
-    KNNList query = knnq.getKNNForObject(instance, k);
+    KNNList query = knnq.getKNN(instance, k);
     for(DoubleDBIDListIter neighbor = query.iter(); neighbor.valid(); neighbor.advance()) {
       int index = Collections.binarySearch(labels, labelrep.get(neighbor));
       if(index >= 0) {
@@ -150,12 +147,6 @@ public class KNNClassifier<O> extends AbstractAlgorithm<Void> implements Classif
     return "lazy learner - provides no model";
   }
 
-  @Override
-  @Deprecated
-  public Void run(Database database) throws IllegalStateException {
-    throw new AbortException("Classifiers cannot auto-run on a database, but need to be trained and can then predict.");
-  }
-
   /**
    * Returns the distance.
    *
@@ -163,16 +154,6 @@ public class KNNClassifier<O> extends AbstractAlgorithm<Void> implements Classif
    */
   public Distance<? super O> getDistance() {
     return distance;
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**
@@ -203,7 +184,7 @@ public class KNNClassifier<O> extends AbstractAlgorithm<Void> implements Classif
 
     @Override
     public void configure(Parameterization config) {
-      new ObjectParameter<Distance<? super O>>(AbstractDistanceBasedAlgorithm.Par.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
           .grab(config, x -> distanceFunction = x);
       new IntParameter(K_ID, 1)//
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //

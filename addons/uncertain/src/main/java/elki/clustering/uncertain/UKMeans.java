@@ -27,7 +27,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import elki.AbstractAlgorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.clustering.kmeans.KMeans;
 import elki.data.Cluster;
@@ -39,7 +38,6 @@ import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.data.uncertain.DiscreteUncertainObject;
 import elki.data.uncertain.UncertainObject;
-import elki.database.Database;
 import elki.database.datastore.DataStoreFactory;
 import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.WritableIntegerDataStore;
@@ -84,16 +82,16 @@ import elki.utilities.random.RandomFactory;
     booktitle = "Proc. 10th Pacific-Asia Conference on Knowledge Discovery and Data Mining (PAKDD 2006)", //
     url = "https://doi.org/10.1007/11731139_24", //
     bibkey = "DBLP:conf/pakdd/ChauCKN06")
-public class UKMeans extends AbstractAlgorithm<Clustering<KMeansModel>> implements ClusteringAlgorithm<Clustering<KMeansModel>> {
+public class UKMeans implements ClusteringAlgorithm<Clustering<KMeansModel>> {
   /**
-   * CLass logger.
+   * Class logger.
    */
-  protected static final Logging LOG = Logging.getLogger(UKMeans.class);
+  private static final Logging LOG = Logging.getLogger(UKMeans.class);
 
   /**
    * Key for statistics logging.
    */
-  protected static final String KEY = UKMeans.class.getName();
+  private static final String KEY = UKMeans.class.getName();
 
   /**
    * Number of cluster centers to initialize.
@@ -123,14 +121,18 @@ public class UKMeans extends AbstractAlgorithm<Clustering<KMeansModel>> implemen
     this.rnd = rnd;
   }
 
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(UncertainObject.UNCERTAIN_OBJECT_FIELD);
+  }
+
   /**
    * Run the clustering.
    *
-   * @param database the Database
    * @param relation the Relation
    * @return Clustering result
    */
-  public Clustering<?> run(final Database database, final Relation<DiscreteUncertainObject> relation) {
+  public Clustering<KMeansModel> run(Relation<DiscreteUncertainObject> relation) {
     // Choose initial means randomly
     DBIDs sampleids = DBIDUtil.randomSample(relation.getDBIDs(), k, rnd);
     List<double[]> means = new ArrayList<>(k);
@@ -286,16 +288,6 @@ public class UKMeans extends AbstractAlgorithm<Clustering<KMeansModel>> implemen
     return newMeans;
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(UncertainObject.UNCERTAIN_OBJECT_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return UKMeans.LOG;
-  }
-
   /**
    * Log statistics on the variance sum.
    *
@@ -304,8 +296,7 @@ public class UKMeans extends AbstractAlgorithm<Clustering<KMeansModel>> implemen
    */
   protected void logVarstat(DoubleStatistic varstat, double[] varsum) {
     if(varstat != null) {
-      double s = sum(varsum);
-      getLogger().statistics(varstat.setDouble(s));
+      LOG.statistics(varstat.setDouble(sum(varsum)));
     }
   }
 

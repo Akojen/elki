@@ -33,7 +33,6 @@ import elki.data.model.ClusterModel;
 import elki.data.model.Model;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
-import elki.database.Database;
 import elki.database.ids.*;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
@@ -121,13 +120,17 @@ public class ORCLUS<V extends NumberVector> extends AbstractProjectedClustering<
     this.pca = pca;
   }
 
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
+  }
+
   /**
    * Performs the ORCLUS algorithm on the given database.
-   * 
-   * @param database Database
+   *
    * @param relation Relation
    */
-  public Clustering<Model> run(Database database, Relation<V> relation) {
+  public Clustering<Model> run(Relation<V> relation) {
     // current dimensionality associated with each seed
     int dim_c = RelationUtil.dimensionality(relation);
 
@@ -219,11 +222,10 @@ public class ORCLUS<V extends NumberVector> extends AbstractProjectedClustering<
     for(DBIDIter it = database.iterDBIDs(); it.valid(); it.advance()) {
       double[] o = database.get(it).toArray();
 
-      double minDist = Double.POSITIVE_INFINITY;
-      ORCLUSCluster minCluster = null;
-
-      // determine projected distance between o and cluster
-      for(int i = 0; i < clusters.size(); i++) {
+      // determine projected distance between o and clusters
+      ORCLUSCluster minCluster = clusters.get(0);
+      double minDist = distFunc.distance(DoubleVector.wrap(project(minCluster, o)), projectedCentroids.get(0));
+      for(int i = 1; i < clusters.size(); i++) {
         ORCLUSCluster c = clusters.get(i);
         NumberVector o_proj = DoubleVector.wrap(project(c, o));
         double dist = distFunc.distance(o_proj, projectedCentroids.get(i));
@@ -393,16 +395,6 @@ public class ORCLUS<V extends NumberVector> extends AbstractProjectedClustering<
    */
   private double[] project(ORCLUSCluster c, double[] o) {
     return times(c.basis, o);
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

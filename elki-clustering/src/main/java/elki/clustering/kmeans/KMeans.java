@@ -20,13 +20,12 @@
  */
 package elki.clustering.kmeans;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.clustering.kmeans.initialization.KMeansInitialization;
 import elki.data.Clustering;
 import elki.data.NumberVector;
 import elki.data.model.Model;
-import elki.database.Database;
 import elki.database.relation.Relation;
 import elki.distance.NumberVectorDistance;
 import elki.utilities.optionhandling.OptionID;
@@ -46,7 +45,7 @@ public interface KMeans<V extends NumberVector, M extends Model> extends Cluster
   /**
    * OptionID for the distance function.
    */
-  OptionID DISTANCE_FUNCTION_ID = AbstractDistanceBasedAlgorithm.Par.DISTANCE_FUNCTION_ID;
+  OptionID DISTANCE_FUNCTION_ID = Algorithm.Utils.DISTANCE_FUNCTION_ID;
 
   /**
    * Parameter to specify the initialization method
@@ -79,11 +78,10 @@ public interface KMeans<V extends NumberVector, M extends Model> extends Cluster
   /**
    * Run the clustering algorithm.
    *
-   * @param database Database to run on.
    * @param rel Relation to process.
    * @return Clustering result
    */
-  Clustering<M> run(Database database, Relation<V> rel);
+  Clustering<M> run(Relation<V> rel);
 
   /**
    * Set the value of k. Needed for some types of nested k-means.

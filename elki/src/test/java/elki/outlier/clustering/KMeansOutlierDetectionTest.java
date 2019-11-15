@@ -44,8 +44,8 @@ public class KMeansOutlierDetectionTest extends AbstractOutlierAlgorithmTest {
         .with(KMeansOutlierDetection.Par.CLUSTERING_ID, HamerlyKMeans.class) //
         .with(KMeans.K_ID, 10) //
         .with(KMeans.SEED_ID, 0) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.80386666);
-    testSingleScore(result, 416, 0.01551616);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.80386666);
+    assertSingleScore(result, 416, 0.01551616);
   }
 }

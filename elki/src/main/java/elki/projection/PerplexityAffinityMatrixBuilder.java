@@ -20,7 +20,7 @@
  */
 package elki.projection;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.database.ids.ArrayDBIDs;
 import elki.database.ids.DBIDUtil;
@@ -36,9 +36,11 @@ import elki.math.MathUtil;
 import elki.math.MeanVariance;
 import elki.utilities.documentation.Reference;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 import net.jafama.FastMath;
 
@@ -125,7 +127,7 @@ public class PerplexityAffinityMatrixBuilder<O> extends GaussianAffinityMatrixBu
     final double logPerp = FastMath.log(perplexity);
     double[][] pij = new double[size][size];
     FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("Optimizing perplexities", size, LOG) : null;
-    Duration timer = LOG.isStatistics() ? LOG.newDuration(PerplexityAffinityMatrixBuilder.class.getName() + ".runtime.pijmatrix").begin() : null;
+    Duration timer = LOG.newDuration(PerplexityAffinityMatrixBuilder.class.getName() + ".runtime.pijmatrix").begin();
     MeanVariance mv = LOG.isStatistics() ? new MeanVariance() : null;
     for(int i = 0; i < size; i++) {
       double beta = computePi(i, dist[i], pij[i], perplexity, logPerp);
@@ -135,8 +137,8 @@ public class PerplexityAffinityMatrixBuilder<O> extends GaussianAffinityMatrixBu
       LOG.incrementProcessed(prog);
     }
     LOG.ensureCompleted(prog);
-    if(LOG.isStatistics()) { // timer != null, mv != null
-      LOG.statistics(timer.end());
+    LOG.statistics(timer.end());
+    if(mv != null && LOG.isStatistics()) {
       LOG.statistics(new DoubleStatistic(PerplexityAffinityMatrixBuilder.class.getName() + ".sigma.average", mv.getMean()));
       LOG.statistics(new DoubleStatistic(PerplexityAffinityMatrixBuilder.class.getName() + ".sigma.stddev", mv.getSampleStddev()));
     }
@@ -192,7 +194,7 @@ public class PerplexityAffinityMatrixBuilder<O> extends GaussianAffinityMatrixBu
 
   /**
    * Estimate beta from the distances in a row.
-   * 
+   * <p>
    * This lacks a mathematical argument, but is a handcrafted heuristic to avoid
    * numerical problems. The average distance is usually too large, so we scale
    * the average distance by 2*N/perplexity. Then estimate beta as 1/x.
@@ -227,7 +229,7 @@ public class PerplexityAffinityMatrixBuilder<O> extends GaussianAffinityMatrixBu
    *
    * @param <O> Object type
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Perplexity parameter, the number of neighbors to preserve.
      */
@@ -238,14 +240,15 @@ public class PerplexityAffinityMatrixBuilder<O> extends GaussianAffinityMatrixBu
      */
     protected double perplexity;
 
-    @Override
-    public Class<?> getDefaultDistance() {
-      return SquaredEuclideanDistance.class;
-    }
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, SquaredEuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new DoubleParameter(PERPLEXITY_ID)//
           .setDefaultValue(40.0) //
           .addConstraint(CommonConstraints.GREATER_THAN_ZERO_DOUBLE) //

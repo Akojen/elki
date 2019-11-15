@@ -20,23 +20,21 @@
  */
 package elki.outlier.lof;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
 import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.WritableDoubleDataStore;
-import elki.database.ids.DBIDIter;
-import elki.database.ids.DBIDUtil;
-import elki.database.ids.DoubleDBIDListIter;
-import elki.database.ids.KNNList;
+import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
 import elki.database.query.distance.DistanceQuery;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.math.DoubleMinMax;
@@ -49,9 +47,11 @@ import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Computes the LDOF (Local Distance-Based Outlier Factor) for all objects of a
@@ -68,7 +68,7 @@ import elki.utilities.optionhandling.parameters.IntParameter;
  * @author Arthur Zimek
  * @since 0.3
  *
- * @has - - - KNNQuery
+ * @has - - - KNNSearcher
  *
  * @param <O> the type of objects handled by this algorithm
  */
@@ -79,7 +79,7 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     booktitle = "Proc. 13th Pacific-Asia Conf. Adv. Knowledge Discovery and Data Mining (PAKDD 2009)", //
     url = "https://doi.org/10.1007/978-3-642-01307-2_84", //
     bibkey = "DBLP:conf/pakdd/ZhangHJ09")
-public class LDOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class LDOF<O> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
@@ -90,6 +90,11 @@ public class LDOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * distributions, although one might also discuss using 1.0 as baseline.
    */
   private static final double LDOF_BASELINE = 0.5;
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * Number of neighbors to query + query point itself.
@@ -103,8 +108,14 @@ public class LDOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @param k k Parameter
    */
   public LDOF(Distance<? super O> distance, int k) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.kplus = k + 1; // + query point
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -115,7 +126,7 @@ public class LDOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    */
   public OutlierResult run(Relation<O> relation) {
     QueryBuilder<O> qb = new QueryBuilder<>(relation, distance);
-    KNNQuery<O> knnQuery = qb.kNNQuery(kplus);
+    KNNSearcher<DBIDRef> knnQuery = qb.kNNByDBID(kplus);
     DistanceQuery<O> distFunc = qb.distanceQuery();
 
     // track the maximum value for normalization
@@ -131,7 +142,7 @@ public class LDOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
 
     Mean dxp = new Mean(), Dxp = new Mean();
     for(DBIDIter iditer = relation.iterDBIDs(); iditer.valid(); iditer.advance()) {
-      KNNList neighbors = knnQuery.getKNNForDBID(iditer, kplus);
+      KNNList neighbors = knnQuery.getKNN(iditer, kplus);
       dxp.reset();
       Dxp.reset();
       DoubleDBIDListIter neighbor1 = neighbors.iter(),
@@ -168,22 +179,12 @@ public class LDOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
     return new OutlierResult(scoreMeta, scoreResult);
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
    * @author Erich Schubert
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Parameter to specify the number of nearest neighbors of an object to be
      * considered for computing its LDOF_SCORE, must be an integer greater than
@@ -192,13 +193,19 @@ public class LDOF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
     public static final OptionID K_ID = new OptionID("ldof.k", "The number of nearest neighbors of an object to be considered for computing its LDOF_SCORE.");
 
     /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
+    /**
      * Number of neighbors to use
      */
     protected int k;
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(K_ID) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> k = x);

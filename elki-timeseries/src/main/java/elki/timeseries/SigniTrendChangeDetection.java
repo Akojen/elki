@@ -20,7 +20,7 @@
  */
 package elki.timeseries;
 
-import elki.AbstractAlgorithm;
+import elki.Algorithm;
 import elki.data.NumberVector;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
@@ -34,7 +34,6 @@ import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
-import elki.logging.Logging;
 import elki.math.DoubleMinMax;
 import elki.result.Metadata;
 import elki.result.outlier.BasicOutlierScoreMeta;
@@ -44,11 +43,12 @@ import elki.utilities.Priority;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.exceptions.AbortException;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
+
 import net.jafama.FastMath;
 
 /**
@@ -86,12 +86,7 @@ import net.jafama.FastMath;
     url = "https://doi.org/10.1145/2623330.2623740", //
     bibkey = "DBLP:conf/kdd/SchubertWK14")
 @Priority(Priority.RECOMMENDED)
-public class SigniTrendChangeDetection extends AbstractAlgorithm<ChangePoints> {
-  /**
-   * Class logger
-   */
-  private static final Logging LOG = Logging.getLogger(SigniTrendChangeDetection.class);
-
+public class SigniTrendChangeDetection implements Algorithm {
   /**
    * Exponential aging parameter.
    */
@@ -119,6 +114,11 @@ public class SigniTrendChangeDetection extends AbstractAlgorithm<ChangePoints> {
     this.alpha = 1. - FastMath.exp(FastMath.log(0.5) / halflife);
     this.bias = bias;
     this.minsigma = minsigma;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
   }
 
   /**
@@ -233,16 +233,6 @@ public class SigniTrendChangeDetection extends AbstractAlgorithm<ChangePoints> {
       }
       return absmax;
     }
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

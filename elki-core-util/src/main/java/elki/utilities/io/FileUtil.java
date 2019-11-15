@@ -20,15 +20,16 @@
  */
 package elki.utilities.io;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PushbackInputStream;
+import java.io.*;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.zip.GZIPInputStream;
+
+import elki.logging.LoggingConfiguration;
 
 /**
  * Various static helper methods to deal with files and file names.
@@ -39,7 +40,6 @@ import java.util.zip.GZIPInputStream;
 public final class FileUtil {
   /**
    * Fake Constructor. Use static methods.
-   * 
    */
   private FileUtil() {
     // Do not instantiate.
@@ -47,20 +47,20 @@ public final class FileUtil {
 
   /**
    * Returns the lower case extension of the selected file.
-   * 
+   * <p>
    * If no file is selected, <code>null</code> is returned.
    * 
    * @param file File object
    * @return Returns the extension of the selected file in lower case or
    *         <code>null</code>
    */
-  public static String getFilenameExtension(File file) {
-    return getFilenameExtension(file.getName());
+  public static String getFilenameExtension(Path file) {
+    return file == null ? null : getFilenameExtension(file.getFileName().toString());
   }
 
   /**
    * Returns the lower case extension of the selected file.
-   * 
+   * <p>
    * If no file is selected, <code>null</code> is returned.
    * 
    * @param name File name
@@ -81,16 +81,15 @@ public final class FileUtil {
    * 
    * @param filename File name in system notation
    * @return Input stream
-   * @throws FileNotFoundException When no file was found.
    */
-  public static InputStream openSystemFile(String filename) throws FileNotFoundException {
+  public static InputStream openSystemFile(String filename) throws IOException {
     try {
-      return new FileInputStream(filename);
+      return Files.newInputStream(Paths.get(filename));
     }
-    catch(FileNotFoundException e) {
+    catch(FileNotFoundException | NoSuchFileException e) {
       // try with classloader
       String resname = File.separatorChar != '/' ? filename.replace(File.separatorChar, '/') : filename;
-      ClassLoader cl = FileUtil.class.getClassLoader();
+      ClassLoader cl = LoggingConfiguration.class.getClassLoader();
       InputStream result = cl.getResourceAsStream(resname);
       if(result != null) {
         return result;
@@ -103,7 +102,8 @@ public final class FileUtil {
       try {
         URLConnection conn = u.openConnection();
         conn.setUseCaches(false);
-        if((result = conn.getInputStream()) != null) {
+        result = conn.getInputStream();
+        if(result != null) {
           return result;
         }
       }
@@ -194,6 +194,7 @@ public final class FileUtil {
    */
   public static String slurp(InputStream is) throws IOException {
     StringBuilder buf = new StringBuilder();
+    // FIXME: use byte buffers? New Java APIs?
     final byte[] b = new byte[4096];
     for(int n; (n = is.read(b)) != -1;) {
       buf.append(new String(b, 0, n));

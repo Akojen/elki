@@ -26,7 +26,7 @@ import elki.database.datastore.*;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
 import elki.database.query.distance.DistanceQuery;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
 import elki.logging.Logging;
@@ -84,6 +84,11 @@ public class SLINKHDBSCANLinearMemory<O> extends AbstractHDBSCAN<O, PointerDensi
     super(distance, minPts);
   }
 
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
+  }
+
   /**
    * Run the algorithm
    *
@@ -93,7 +98,7 @@ public class SLINKHDBSCANLinearMemory<O> extends AbstractHDBSCAN<O, PointerDensi
   public PointerDensityHierarchyRepresentationResult run(Relation<O> relation) {
     final QueryBuilder<O> qb = new QueryBuilder<>(relation, distance);
     final DistanceQuery<O> distQ = qb.distanceQuery();
-    final KNNQuery<O> knnQ = qb.kNNQuery(minPts);
+    final KNNSearcher<DBIDRef> knnQ = qb.kNNByDBID(minPts);
     // We need array addressing later.
     final ArrayDBIDs ids = DBIDUtil.ensureArray(relation.getDBIDs());
 
@@ -226,11 +231,6 @@ public class SLINKHDBSCANLinearMemory<O> extends AbstractHDBSCAN<O, PointerDensi
         pi.put(it, id);
       }
     }
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
   }
 
   @Override

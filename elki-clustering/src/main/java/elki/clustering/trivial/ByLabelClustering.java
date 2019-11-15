@@ -24,9 +24,7 @@ import java.util.HashMap;
 import java.util.Map.Entry;
 import java.util.regex.Pattern;
 
-import elki.AbstractAlgorithm;
 import elki.clustering.ClusteringAlgorithm;
-import elki.data.ClassLabel;
 import elki.data.Cluster;
 import elki.data.Clustering;
 import elki.data.model.ClusterModel;
@@ -37,29 +35,28 @@ import elki.data.type.TypeUtil;
 import elki.database.Database;
 import elki.database.ids.*;
 import elki.database.relation.Relation;
-import elki.logging.Logging;
 import elki.result.Metadata;
 import elki.utilities.Priority;
 import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Title;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.Flag;
 import elki.utilities.optionhandling.parameters.PatternParameter;
 
 /**
  * Pseudo clustering using labels.
- * 
+ * <p>
  * This "algorithm" puts elements into the same cluster when they agree in their
  * labels. I.e. it just uses a predefined clustering, and is mostly useful for
  * testing and evaluation (e.g. comparing the result of a real algorithm to a
  * reference result / golden standard).
- * 
+ * <p>
  * If an assignment of an object to multiple clusters is desired, the labels of
  * the object indicating the clusters need to be separated by blanks and the
  * flag {@link Par#MULTIPLE_ID} needs to be set.
- * 
+ * <p>
  * TODO: handling of data sets with no labels?
  * 
  * @author Erich Schubert
@@ -70,12 +67,7 @@ import elki.utilities.optionhandling.parameters.PatternParameter;
 @Title("Clustering by label")
 @Description("Cluster points by a (pre-assigned!) label. For comparing results with a reference clustering.")
 @Priority(Priority.SUPPLEMENTARY)
-public class ByLabelClustering extends AbstractAlgorithm<Clustering<Model>> implements ClusteringAlgorithm<Clustering<Model>> {
-  /**
-   * The logger for this class.
-   */
-  private static final Logging LOG = Logging.getLogger(ByLabelClustering.class);
-
+public class ByLabelClustering implements ClusteringAlgorithm<Clustering<Model>> {
   /**
    * Allow multiple cluster assignment.
    */
@@ -106,11 +98,15 @@ public class ByLabelClustering extends AbstractAlgorithm<Clustering<Model>> impl
   }
 
   @Override
-  public Clustering<Model> run(Database database) {
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.GUESSED_LABEL);
+  }
+
+  @Override
+  public Clustering<Model> autorun(Database database) {
     // Prefer a true class label
     try {
-      Relation<ClassLabel> relation = database.getRelation(TypeUtil.CLASSLABEL);
-      return run(relation);
+      return run(database.getRelation(TypeUtil.CLASSLABEL));
     }
     catch(NoSupportedDataTypeException e) {
       // Otherwise, try any labellike.
@@ -213,16 +209,6 @@ public class ByLabelClustering extends AbstractAlgorithm<Clustering<Model>> impl
     else {
       labelMap.put(label, DBIDUtil.deref(id));
     }
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.GUESSED_LABEL);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

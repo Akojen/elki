@@ -39,8 +39,8 @@ public class DBOutlierScoreTest extends AbstractOutlierAlgorithmTest {
   public void testDBOutlierScore() {
     Database db = makeSimpleDatabase(UNITTEST + "outlier-fire.ascii", 1025);
     OutlierResult result = new ELKIBuilder<DBOutlierScore<DoubleVector>>(DBOutlierScore.class) //
-        .with(DBOutlierScore.Par.D_ID, 0.175).build().run(db);
-    testSingleScore(result, 1025, 0.688780487804878);
-    testAUC(db, "Noise", result, 0.992565641);
+        .with(DBOutlierScore.Par.D_ID, 0.175).build().autorun(db);
+    assertSingleScore(result, 1025, 0.688780487804878);
+    assertAUC(db, "Noise", result, 0.992565641);
   }
 }

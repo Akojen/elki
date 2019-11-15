@@ -23,7 +23,7 @@ package elki.clustering.dbscan;
 import java.util.ArrayList;
 import java.util.List;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.data.Cluster;
 import elki.data.Clustering;
@@ -33,9 +33,10 @@ import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.range.RangeQuery;
+import elki.database.query.range.RangeSearcher;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.logging.progress.IndefiniteProgress;
@@ -46,10 +47,12 @@ import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Density-Based Clustering of Applications with Noise (DBSCAN), an algorithm to
@@ -86,11 +89,16 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     url = "https://doi.org/10.1145/3068335", //
     bibkey = "DBLP:journals/tods/SchubertSEKX17")
 @Priority(Priority.RECOMMENDED)
-public class DBSCAN<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, Clustering<Model>> implements ClusteringAlgorithm<Clustering<Model>> {
+public class DBSCAN<O> implements ClusteringAlgorithm<Clustering<Model>> {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(DBSCAN.class);
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * Holds the epsilon radius threshold.
@@ -110,9 +118,15 @@ public class DBSCAN<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O
    * @param minpts Minpts parameter
    */
   public DBSCAN(Distance<? super O> distance, double epsilon, int minpts) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.epsilon = epsilon;
     this.minpts = minpts;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -128,7 +142,7 @@ public class DBSCAN<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O
     }
 
     Instance dbscan = new Instance();
-    dbscan.run(relation, new QueryBuilder<>(relation, distance).rangeQuery(epsilon));
+    dbscan.run(relation, new QueryBuilder<>(relation, distance).rangeByDBID(epsilon));
 
     double averagen = dbscan.ncounter / (double) relation.size();
     LOG.statistics(new DoubleStatistic(DBSCAN.class.getName() + ".average-neighbors", averagen));
@@ -187,19 +201,19 @@ public class DBSCAN<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O
     /**
      * Range query to use.
      */
-    protected RangeQuery<O> rangeQuery;
+    protected RangeSearcher<DBIDRef> rangeQuery;
 
     /**
      * Run the DBSCAN algorithm
      *
      * @param relation Data relation
-     * @param rangeQuery Range query class
+     * @param rangeSearcher Range query class
      */
-    protected void run(Relation<O> relation, RangeQuery<O> rangeQuery) {
+    protected void run(Relation<O> relation, RangeSearcher<DBIDRef> rangeSearcher) {
       final int size = relation.size();
       this.objprog = LOG.isVerbose() ? new FiniteProgress("Processing objects", size, LOG) : null;
       this.clusprog = LOG.isVerbose() ? new IndefiniteProgress("Number of clusters", LOG) : null;
-      this.rangeQuery = rangeQuery;
+      this.rangeQuery = rangeSearcher;
 
       resultList = new ArrayList<>();
       noise = DBIDUtil.newHashSet();
@@ -231,7 +245,7 @@ public class DBSCAN<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O
      * @param seeds Array to store the current seeds
      */
     protected void expandCluster(DBIDRef startObjectID, ArrayModifiableDBIDs seeds) {
-      DoubleDBIDList neighbors = rangeQuery.getRangeForDBID(startObjectID, epsilon);
+      DoubleDBIDList neighbors = rangeQuery.getRange(startObjectID, epsilon);
       processedIDs.add(startObjectID);
       LOG.incrementProcessed(objprog);
       ncounter += neighbors.size();
@@ -250,7 +264,7 @@ public class DBSCAN<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O
       while(!seeds.isEmpty()) {
         // Note: we could reuse the neighbors list here,
         // but at least on JDK8 this was much slower!
-        neighbors = rangeQuery.getRangeForDBID(seeds.pop(o), epsilon);
+        neighbors = rangeQuery.getRange(seeds.pop(o), epsilon);
         ncounter += neighbors.size(); // statistics for assistance
         if(neighbors.size() >= minpts) { // neighbor is core
           processNeighbors(neighbors, currentCluster, seeds);
@@ -269,7 +283,7 @@ public class DBSCAN<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O
      * @param seeds Seed set
      */
     private void processNeighbors(DoubleDBIDList neighbors, ModifiableDBIDs currentCluster, ArrayModifiableDBIDs seeds) {
-      final boolean ismetric = getDistance().isMetric();
+      final boolean ismetric = distance.isMetric();
       for(DoubleDBIDListIter neighbor = neighbors.iter(); neighbor.valid(); neighbor.advance()) {
         if(processedIDs.add(neighbor)) {
           // No need to query again if metric and distance 0.
@@ -285,22 +299,12 @@ public class DBSCAN<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O
     }
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
    * @author Erich Schubert
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Parameter to specify the maximum radius of the neighborhood to be
      * considered, must be suitable to the distance function specified.
@@ -323,9 +327,15 @@ public class DBSCAN<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O
      */
     protected int minpts;
 
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new DoubleParameter(EPSILON_ID) //
           .addConstraint(CommonConstraints.GREATER_THAN_ZERO_DOUBLE) //
           .grab(config, x -> epsilon = x);

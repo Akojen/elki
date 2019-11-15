@@ -24,19 +24,17 @@ import static elki.math.linearalgebra.VMath.*;
 
 import java.util.Arrays;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.NumberVector;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.*;
-import elki.database.ids.DBIDIter;
-import elki.database.ids.DBIDUtil;
-import elki.database.ids.DBIDs;
-import elki.database.ids.ModifiableDBIDs;
+import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.*;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.math.linearalgebra.pca.PCAResult;
@@ -51,6 +49,7 @@ import elki.utilities.datastructures.arraylike.DoubleArrayAdapter;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.constraints.GreaterConstraint;
 import elki.utilities.optionhandling.parameterization.Parameterization;
@@ -77,7 +76,7 @@ import elki.utilities.optionhandling.parameters.*;
     booktitle = "Proc. IEEE Int. Conf. on Data Mining (ICDM 2012)", //
     url = "https://doi.org/10.1109/ICDM.2012.21", //
     bibkey = "DBLP:conf/icdm/KriegelKSZ12")
-public class COP<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<Distance<? super V>, OutlierResult> implements OutlierAlgorithm {
+public class COP<V extends NumberVector> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
@@ -111,21 +110,6 @@ public class COP<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<
   };
 
   /**
-   * Number of neighbors to be considered.
-   */
-  int k;
-
-  /**
-   * Holds the PCA runner.
-   */
-  private PCARunner pca;
-
-  /**
-   * Expected amount of outliers.
-   */
-  double expect = 0.0001;
-
-  /**
    * Score type.
    *
    * @author Erich Schubert
@@ -142,14 +126,34 @@ public class COP<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<
   }
 
   /**
+   * Distance function used.
+   */
+  protected Distance<? super V> distance;
+
+  /**
+   * Number of neighbors to be considered.
+   */
+  protected int k;
+
+  /**
+   * Holds the PCA runner.
+   */
+  protected PCARunner pca;
+
+  /**
+   * Expected amount of outliers.
+   */
+  protected double expect = 0.0001;
+
+  /**
    * Type of distribution to assume for distances.
    */
-  DistanceDist dist = DistanceDist.CHISQUARED;
+  protected DistanceDist dist = DistanceDist.CHISQUARED;
 
   /**
    * Include models in output.
    */
-  boolean models;
+  protected boolean models;
 
   /**
    * Constructor.
@@ -162,12 +166,18 @@ public class COP<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<
    * @param models Report models
    */
   public COP(Distance<? super V> distance, int k, PCARunner pca, double expect, DistanceDist dist, boolean models) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.k = k;
     this.pca = pca;
     this.expect = expect;
     this.dist = dist;
     this.models = models;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
   }
 
   /**
@@ -178,7 +188,7 @@ public class COP<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<
    */
   public OutlierResult run(Relation<V> relation) {
     final DBIDs ids = relation.getDBIDs();
-    KNNQuery<V> knnQuery = new QueryBuilder<>(relation, distance).kNNQuery(k + 1);
+    KNNSearcher<DBIDRef> knnQuery = new QueryBuilder<>(relation, distance).kNNByDBID(k + 1);
 
     final int dim = RelationUtil.dimensionality(relation);
     if(k <= dim + 1) {
@@ -196,7 +206,7 @@ public class COP<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<
     ModifiableDBIDs nids = DBIDUtil.newHashSet(k + 10);
     for(DBIDIter id = ids.iter(); id.valid(); id.advance()) {
       nids.clear();
-      nids.addDBIDs(knnQuery.getKNNForDBID(id, k + 1));
+      nids.addDBIDs(knnQuery.getKNN(id, k + 1));
       nids.remove(id); // Do not use query object
 
       computeCentroid(centroid, relation, nids);
@@ -295,22 +305,12 @@ public class COP<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<
     timesEquals(centroid, 1. / ids.size());
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
    * @author Erich Schubert
    */
-  public static class Par<V extends NumberVector> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super V>> {
+  public static class Par<V extends NumberVector> implements Parameterizer {
     /**
      * Parameter to specify the number of nearest neighbors of an object to be
      * considered for computing its score, must be an integer greater than 0.
@@ -362,9 +362,15 @@ public class COP<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<
      */
     boolean models = false;
 
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super V> distance;
+
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super V>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(K_ID) //
           .addConstraint(new GreaterConstraint(5)) //
           .grab(config, x -> k = x);

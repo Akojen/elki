@@ -20,26 +20,23 @@
  */
 package elki.outlier.lof;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.spatial.SpatialComparable;
-import elki.data.type.CombinedTypeInformation;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
 import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.DoubleDataStore;
 import elki.database.datastore.WritableDoubleDataStore;
-import elki.database.ids.DBIDIter;
-import elki.database.ids.DBIDs;
-import elki.database.ids.DoubleDBIDListIter;
-import elki.database.ids.KNNList;
+import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.logging.progress.StepProgress;
@@ -52,16 +49,19 @@ import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
 import elki.utilities.documentation.Reference;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 import net.jafama.FastMath;
 
 /**
  * Variance of Volume for outlier detection.
  * <p>
- * The volume is estimated by the distance to the k-nearest neighbor, then the
+ * The volume is estimated by the distance to the k-nearest neighbor, then
+ * the
  * variance of volume is computed.
  * <p>
  * Unfortunately, this approach needs an enormous numerical precision, and may
@@ -79,7 +79,7 @@ import net.jafama.FastMath;
  * @author Erich Schubert
  * @since 0.7.0
  *
- * @has - - - KNNQuery
+ * @has - - - KNNSearcher
  *
  * @param <O> the type of data objects handled by this algorithm
  */
@@ -88,27 +88,37 @@ import net.jafama.FastMath;
     booktitle = "Pattern Recognition Letters 24(16)", //
     url = "https://doi.org/10.1016/S0167-8655(03)00165-X", //
     bibkey = "DBLP:journals/prl/HuS03")
-public class VarianceOfVolume<O extends SpatialComparable> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class VarianceOfVolume<O extends SpatialComparable> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(VarianceOfVolume.class);
 
   /**
-   * The number of neighbors to query (including the query point!)
+   * Distance function used.
    */
-  protected int k;
+  protected Distance<? super O> distance;
+
+  /**
+   * The number of neighbors to query (plus the query point!)
+   */
+  protected int kplus;
 
   /**
    * Constructor.
    *
-   * @param k the number of neighbors to use for comparison (excluding the query
-   *        point)
+   * @param k number of neighbors to use for comparison
    * @param distance the neighborhood distance function
    */
   public VarianceOfVolume(int k, Distance<? super O> distance) {
-    super(distance);
-    this.k = k + 1; // + query point
+    super();
+    this.distance = distance;
+    this.kplus = k + 1; // + query point
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -123,7 +133,7 @@ public class VarianceOfVolume<O extends SpatialComparable> extends AbstractDista
     int dim = RelationUtil.dimensionality(relation);
 
     LOG.beginStep(stepprog, 1, "Materializing nearest-neighbor sets.");
-    KNNQuery<O> knnq = new QueryBuilder<>(relation, distance).precomputed().kNNQuery(k);
+    KNNSearcher<DBIDRef> knnq = new QueryBuilder<>(relation, distance).precomputed().kNNByDBID(kplus);
 
     // Compute Volumes
     LOG.beginStep(stepprog, 2, "Computing Volumes.");
@@ -153,13 +163,13 @@ public class VarianceOfVolume<O extends SpatialComparable> extends AbstractDista
    * @param ids IDs to process
    * @param vols Volume storage
    */
-  private void computeVolumes(KNNQuery<O> knnq, int dim, DBIDs ids, WritableDoubleDataStore vols) {
+  private void computeVolumes(KNNSearcher<DBIDRef> knnq, int dim, DBIDs ids, WritableDoubleDataStore vols) {
     FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("Volume", ids.size(), LOG) : null;
     double scaleconst = MathUtil.SQRTPI * FastMath.pow(GammaDistribution.gamma(1 + dim * .5), -1. / dim);
     boolean warned = false;
     double sum = 0.;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
-      double dk = knnq.getKNNForDBID(iter, k).getKNNDistance();
+      double dk = knnq.getKNN(iter, kplus).getKNNDistance();
       double vol = dk > 0 ? MathUtil.powi(dk * scaleconst, dim) : 0.;
       if(vol == Double.POSITIVE_INFINITY && !warned) {
         LOG.warning("Variance of Volumes has hit double precision limits, results are not reliable.");
@@ -185,11 +195,11 @@ public class VarianceOfVolume<O extends SpatialComparable> extends AbstractDista
    * @param vovs Variance of Volume storage
    * @param vovminmax Score minimum/maximum tracker
    */
-  private void computeVOVs(KNNQuery<O> knnq, DBIDs ids, DoubleDataStore vols, WritableDoubleDataStore vovs, DoubleMinMax vovminmax) {
+  private void computeVOVs(KNNSearcher<DBIDRef> knnq, DBIDs ids, DoubleDataStore vols, WritableDoubleDataStore vovs, DoubleMinMax vovminmax) {
     FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("Variance of Volume", ids.size(), LOG) : null;
     boolean warned = false;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
-      KNNList knns = knnq.getKNNForDBID(iter, k);
+      KNNList knns = knnq.getKNN(iter, kplus);
       DoubleDBIDListIter it = knns.iter();
       double vbar = 0.;
       for(; it.valid(); it.advance()) {
@@ -214,16 +224,6 @@ public class VarianceOfVolume<O extends SpatialComparable> extends AbstractDista
     LOG.ensureCompleted(prog);
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(new CombinedTypeInformation(getDistance().getInputTypeRestriction(), TypeUtil.SPATIAL_OBJECT));
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
@@ -233,7 +233,7 @@ public class VarianceOfVolume<O extends SpatialComparable> extends AbstractDista
    *
    * @param <O> Object type
    */
-  public static class Par<O extends SpatialComparable> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O extends SpatialComparable> implements Parameterizer {
     /**
      * Parameter to specify the number of nearest neighbors of an object to be
      * considered for computing its VOV score, must be an integer greater than
@@ -242,13 +242,19 @@ public class VarianceOfVolume<O extends SpatialComparable> extends AbstractDista
     public static final OptionID K_ID = new OptionID("vov.k", "The number of nearest neighbors (not including the query point) of an object to be considered for computing its VOV score.");
 
     /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
+    /**
      * The neighborhood size to use.
      */
     protected int k = 2;
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(K_ID) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> k = x);

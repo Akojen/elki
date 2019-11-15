@@ -41,8 +41,8 @@ public class AggarwalYuNaiveTest extends AbstractOutlierAlgorithmTest {
     OutlierResult result = new ELKIBuilder<AggarwalYuNaive<DoubleVector>>(AggarwalYuNaive.class) //
         .with(AggarwalYuNaive.Par.K_ID, 2) //
         .with(AggarwalYuNaive.Par.PHI_ID, 8) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.9007777777777);
-    testSingleScore(result, 945, -2.862640213982);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.9007777777777);
+    assertSingleScore(result, 945, -2.862640213982);
   }
 }

@@ -45,8 +45,8 @@ public class KDEOSTest extends AbstractOutlierAlgorithmTest {
         .with(KDEOS.Par.KMAX_ID, 20) //
         .with(KDEOS.Par.KERNEL_SCALE_ID, 1.) //
         .with(KDEOS.Par.IDIM_ID, -1) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.804918767);
-    testSingleScore(result, 1293, 0.88750800246);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.804918767);
+    assertSingleScore(result, 1293, 0.88750800246);
   }
 }

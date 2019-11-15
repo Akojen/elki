@@ -23,7 +23,7 @@ package elki.clustering.hierarchical.extraction;
 import java.util.ArrayList;
 import java.util.Collection;
 
-import elki.AbstractAlgorithm;
+import elki.Algorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.clustering.hierarchical.HierarchicalClusteringAlgorithm;
 import elki.clustering.hierarchical.PointerDensityHierarchyRepresentationResult;
@@ -42,8 +42,8 @@ import elki.logging.progress.FiniteProgress;
 import elki.result.Metadata;
 import elki.utilities.Priority;
 import elki.utilities.documentation.Reference;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
@@ -103,9 +103,8 @@ public class SimplifiedHierarchyExtraction implements ClusteringAlgorithm<Cluste
   }
 
   @Override
-  public Clustering<DendrogramModel> run(Database database) {
-    PointerHierarchyRepresentationResult pointerresult = algorithm.run(database);
-    return run(pointerresult);
+  public Clustering<DendrogramModel> autorun(Database database) {
+    return run(algorithm.autorun(database));
   }
 
   /**
@@ -457,7 +456,7 @@ public class SimplifiedHierarchyExtraction implements ClusteringAlgorithm<Cluste
 
     @Override
     public void configure(Parameterization config) {
-      new ObjectParameter<HierarchicalClusteringAlgorithm>(AbstractAlgorithm.ALGORITHM_ID, HierarchicalClusteringAlgorithm.class) //
+      new ObjectParameter<HierarchicalClusteringAlgorithm>(Algorithm.Utils.ALGORITHM_ID, HierarchicalClusteringAlgorithm.class) //
           .grab(config, x -> algorithm = x);
       new IntParameter(MINCLUSTERSIZE_ID, 1) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //

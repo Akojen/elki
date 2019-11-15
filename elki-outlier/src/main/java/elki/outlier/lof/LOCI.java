@@ -22,23 +22,21 @@ package elki.outlier.lof;
 
 import java.util.Arrays;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
 import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.WritableDataStore;
 import elki.database.datastore.WritableDoubleDataStore;
-import elki.database.ids.DBIDIter;
-import elki.database.ids.DBIDs;
-import elki.database.ids.DoubleDBIDList;
-import elki.database.ids.DoubleDBIDListIter;
+import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.range.RangeQuery;
+import elki.database.query.range.RangeSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.math.DoubleMinMax;
@@ -53,9 +51,11 @@ import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Fast Outlier Detection Using the "Local Correlation Integral".
@@ -75,7 +75,7 @@ import elki.utilities.optionhandling.parameters.IntParameter;
  * @author Erich Schubert
  * @since 0.2
  *
- * @has - - - RangeQuery
+ * @has - - - RangeSearcher
  *
  * @param <O> Object type
  */
@@ -86,11 +86,16 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     booktitle = "Proc. 19th IEEE Int. Conf. on Data Engineering (ICDE '03)", //
     url = "https://doi.org/10.1109/ICDE.2003.1260802", //
     bibkey = "DBLP:conf/icde/PapadimitriouKGF03")
-public class LOCI<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class LOCI<O> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(LOCI.class);
+
+  /**
+   * Distance function used.
+   */
+  private Distance<? super O> distance;
 
   /**
    * Maximum radius.
@@ -116,10 +121,16 @@ public class LOCI<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @param alpha Alpha value
    */
   public LOCI(Distance<? super O> distance, double rmax, int nmin, double alpha) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.rmax = rmax;
     this.nmin = nmin;
     this.alpha = alpha;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -129,7 +140,7 @@ public class LOCI<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @return Outlier result
    */
   public OutlierResult run(Relation<O> relation) {
-    RangeQuery<O> rangeQuery = new QueryBuilder<>(relation, distance).rangeQuery();
+    RangeSearcher<DBIDRef> rangeQuery = new QueryBuilder<>(relation, distance).rangeByDBID();
     DBIDs ids = relation.getDBIDs();
 
     // LOCI preprocessing step
@@ -153,7 +164,7 @@ public class LOCI<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
       double maxnormr = 0;
       if(maxneig >= nmin) {
         // Compute the largest neighborhood we will need.
-        DoubleDBIDList maxneighbors = rangeQuery.getRangeForDBID(iditer, maxdist);
+        DoubleDBIDList maxneighbors = rangeQuery.getRange(iditer, maxdist);
         // TODO: Ensure the result is sorted. This is currently implied.
 
         // For any critical distance, compute the normalized MDEF score.
@@ -217,10 +228,10 @@ public class LOCI<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    * @param rangeQuery Range query
    * @param interestingDistances Distances of interest
    */
-  protected void precomputeInterestingRadii(DBIDs ids, RangeQuery<O> rangeQuery, WritableDataStore<DoubleIntArrayList> interestingDistances) {
+  protected void precomputeInterestingRadii(DBIDs ids, RangeSearcher<DBIDRef> rangeQuery, WritableDataStore<DoubleIntArrayList> interestingDistances) {
     FiniteProgress progressPreproc = LOG.isVerbose() ? new FiniteProgress("LOCI preprocessing", ids.size(), LOG) : null;
     for(DBIDIter iditer = ids.iter(); iditer.valid(); iditer.advance()) {
-      DoubleDBIDList neighbors = rangeQuery.getRangeForDBID(iditer, rmax);
+      DoubleDBIDList neighbors = rangeQuery.getRange(iditer, rmax);
       // build list of critical distances
       DoubleIntArrayList cdist = new DoubleIntArrayList(neighbors.size() << 1);
       {
@@ -382,16 +393,6 @@ public class LOCI<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
     }
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
@@ -401,7 +402,7 @@ public class LOCI<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
    *
    * @param <O> Object type
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Parameter to specify the maximum radius of the neighborhood to be
      * considered, must be suitable to the distance function specified.
@@ -417,6 +418,11 @@ public class LOCI<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
      * Parameter to specify the averaging neighborhood scaling.
      */
     public static final OptionID ALPHA_ID = new OptionID("loci.alpha", "Scaling factor for averaging neighborhood");
+
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
 
     /**
      * Maximum radius.
@@ -435,7 +441,8 @@ public class LOCI<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>,
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new DoubleParameter(RMAX_ID) //
           .grab(config, x -> rmax = x);
       new IntParameter(NMIN_ID, 20) //

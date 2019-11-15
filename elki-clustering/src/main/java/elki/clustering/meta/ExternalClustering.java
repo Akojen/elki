@@ -20,13 +20,12 @@
  */
 package elki.clustering.meta;
 
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 
-import elki.AbstractAlgorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.data.Cluster;
 import elki.data.Clustering;
@@ -46,8 +45,8 @@ import elki.utilities.io.FileUtil;
 import elki.utilities.io.FormatUtil;
 import elki.utilities.io.TokenizedReader;
 import elki.utilities.io.Tokenizer;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.FileParameter;
 
@@ -77,7 +76,7 @@ import it.unimi.dsi.fastutil.objects.ObjectIterator;
 @Description("Load clustering results from an external file. "//
     + "Each line is expected to consists of one clustering, one integer per point "//
     + "and an (optional) non-numeric label.")
-public class ExternalClustering extends AbstractAlgorithm<Clustering<? extends Model>> implements ClusteringAlgorithm<Clustering<? extends Model>> {
+public class ExternalClustering implements ClusteringAlgorithm<Clustering<? extends Model>> {
   /**
    * The logger for this class.
    */
@@ -91,16 +90,21 @@ public class ExternalClustering extends AbstractAlgorithm<Clustering<? extends M
   /**
    * The file to be reparsed.
    */
-  private File file;
+  private Path file;
 
   /**
    * Constructor.
    *
    * @param file File to load
    */
-  public ExternalClustering(File file) {
+  public ExternalClustering(Path file) {
     super();
     this.file = file;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array();
   }
 
   /**
@@ -110,10 +114,9 @@ public class ExternalClustering extends AbstractAlgorithm<Clustering<? extends M
    * @return Result
    */
   @Override
-  public Clustering<? extends Model> run(Database database) {
+  public Clustering<? extends Model> autorun(Database database) {
     Clustering<? extends Model> m = null;
-    try (FileInputStream fis = new FileInputStream(file); //
-        InputStream in = FileUtil.tryGzipInput(fis); //
+    try (InputStream in = FileUtil.tryGzipInput(Files.newInputStream(file)); //
         TokenizedReader reader = CSVReaderFormat.DEFAULT_FORMAT.makeReader()) {
       Tokenizer tokenizer = reader.getTokenizer();
       reader.reset(in);
@@ -186,16 +189,6 @@ public class ExternalClustering extends AbstractAlgorithm<Clustering<? extends M
     Metadata.hierarchyOf(r).addChild(result);
   }
 
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.ANY);
-  }
-
   /**
    * Parameterization class
    *
@@ -210,7 +203,7 @@ public class ExternalClustering extends AbstractAlgorithm<Clustering<? extends M
     /**
      * The file to be reparsed
      */
-    private File file;
+    private Path file;
 
     @Override
     public void configure(Parameterization config) {

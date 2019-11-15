@@ -20,7 +20,6 @@
  */
 package elki.clustering.trivial;
 
-import elki.AbstractAlgorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.data.Cluster;
 import elki.data.Clustering;
@@ -28,9 +27,7 @@ import elki.data.model.ClusterModel;
 import elki.data.model.Model;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
-import elki.database.ids.DBIDs;
 import elki.database.relation.Relation;
-import elki.logging.Logging;
 import elki.result.Metadata;
 import elki.utilities.Priority;
 import elki.utilities.documentation.Description;
@@ -48,12 +45,7 @@ import elki.utilities.documentation.Title;
 @Title("Trivial all-in-one clustering")
 @Description("Returns a 'tivial' clustering which just considers all points to be one big cluster.")
 @Priority(Priority.SUPPLEMENTARY - 50)
-public class TrivialAllInOne extends AbstractAlgorithm<Clustering<Model>> implements ClusteringAlgorithm<Clustering<Model>> {
-  /**
-   * The logger for this class.
-   */
-  private static final Logging LOG = Logging.getLogger(TrivialAllInOne.class);
-
+public class TrivialAllInOne implements ClusteringAlgorithm<Clustering<Model>> {
   /**
    * Constructor.
    */
@@ -61,22 +53,21 @@ public class TrivialAllInOne extends AbstractAlgorithm<Clustering<Model>> implem
     super();
   }
 
-  public Clustering<Model> run(Relation<?> relation) {
-    final DBIDs ids = relation.getDBIDs();
-    Clustering<Model> result = new ReferenceClustering<>();
-    Metadata.of(result).setLongName("All-in-one Trivial Clustering");
-    Cluster<Model> c = new Cluster<Model>(ids, ClusterModel.CLUSTER);
-    result.addToplevelCluster(c);
-    return result;
-  }
-
   @Override
   public TypeInformation[] getInputTypeRestriction() {
     return TypeUtil.array(TypeUtil.ANY);
   }
 
-  @Override
-  protected Logging getLogger() {
-    return LOG;
+  /**
+   * Perform trivial clustering.
+   * 
+   * @param relation Data to cluster
+   * @return Result
+   */
+  public Clustering<Model> run(Relation<?> relation) {
+    Clustering<Model> result = new ReferenceClustering<>();
+    Metadata.of(result).setLongName("All-in-one Trivial Clustering");
+    result.addToplevelCluster(new Cluster<Model>(relation.getDBIDs(), ClusterModel.CLUSTER));
+    return result;
   }
 }

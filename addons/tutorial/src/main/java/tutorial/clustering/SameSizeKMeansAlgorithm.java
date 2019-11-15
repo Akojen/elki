@@ -26,6 +26,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import elki.clustering.kmeans.AbstractKMeans;
+import elki.clustering.kmeans.KMeans;
 import elki.clustering.kmeans.initialization.KMeansInitialization;
 import elki.clustering.kmeans.initialization.KMeansPlusPlus;
 import elki.data.Cluster;
@@ -33,7 +34,6 @@ import elki.data.Clustering;
 import elki.data.DoubleVector;
 import elki.data.NumberVector;
 import elki.data.model.MeanModel;
-import elki.database.Database;
 import elki.database.datastore.DataStoreFactory;
 import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.WritableDataStore;
@@ -84,7 +84,7 @@ public class SameSizeKMeansAlgorithm<V extends NumberVector> extends AbstractKMe
    * Constructor.
    *
    * @param distance Distance function
-   * @param k K parameter
+   * @param k Number of neighbors
    * @param maxiter Maximum number of iterations
    * @param initializer
    */
@@ -95,16 +95,15 @@ public class SameSizeKMeansAlgorithm<V extends NumberVector> extends AbstractKMe
   /**
    * Run k-means with cluster size constraints.
    *
-   * @param database Database
    * @param relation relation to use
    * @return result
    */
   @Override
-  public Clustering<MeanModel> run(Database database, Relation<V> relation) {
+  public Clustering<MeanModel> run(Relation<V> relation) {
     // Database objects to process
     final DBIDs ids = relation.getDBIDs();
     // Choose initial means
-    double[][] means = initializer.chooseInitialMeans(relation, k, getDistance());
+    double[][] means = initializer.chooseInitialMeans(relation, k, distance);
     // Setup cluster assignment store
     List<ModifiableDBIDs> clusters = new ArrayList<>();
     for(int i = 0; i < k; i++) {
@@ -122,7 +121,7 @@ public class SameSizeKMeansAlgorithm<V extends NumberVector> extends AbstractKMe
 
     // Wrap result
     Clustering<MeanModel> result = new Clustering<>();
-    Metadata.of(result).setLongName("k-Means Samesize Clustering");
+    Metadata.of(result).setLongName("k-means Samesize Clustering");
     for(int i = 0; i < clusters.size(); i++) {
       result.addToplevelCluster(new Cluster<>(clusters.get(i), new MeanModel(means[i])));
     }
@@ -137,7 +136,7 @@ public class SameSizeKMeansAlgorithm<V extends NumberVector> extends AbstractKMe
    * @return Initialized storage
    */
   protected WritableDataStore<Meta> initializeMeta(Relation<V> relation, double[][] means) {
-    NumberVectorDistance<? super V> df = getDistance();
+    NumberVectorDistance<? super V> df = distance; // local variable
     // The actual storage
     final WritableDataStore<Meta> metas = DataStoreUtil.makeStorage(relation.getDBIDs(), DataStoreFactory.HINT_HOT | DataStoreFactory.HINT_TEMP, Meta.class);
     // Build the metadata, track the two nearest cluster centers.
@@ -253,7 +252,7 @@ public class SameSizeKMeansAlgorithm<V extends NumberVector> extends AbstractKMe
    * @return final means
    */
   protected double[][] refineResult(Relation<V> relation, double[][] means, List<ModifiableDBIDs> clusters, final WritableDataStore<Meta> metas, ArrayModifiableDBIDs tids) {
-    NumberVectorDistance<? super V> df = getDistance();
+    NumberVectorDistance<? super V> df = distance; // local variable
     // Our desired cluster size:
     final int minsize = tids.size() / k; // rounded down
     final int maxsize = (tids.size() + k - 1) / k; // rounded up
@@ -377,7 +376,7 @@ public class SameSizeKMeansAlgorithm<V extends NumberVector> extends AbstractKMe
     /**
      * Constructor.
      *
-     * @param k
+     * @param k Number of clusters
      */
     protected Meta(int k) {
       dists = new double[k];
@@ -468,7 +467,7 @@ public class SameSizeKMeansAlgorithm<V extends NumberVector> extends AbstractKMe
 
     @Override
     public void configure(Parameterization config) {
-      new ObjectParameter<NumberVectorDistance<? super V>>(DISTANCE_FUNCTION_ID, NumberVectorDistance.class, SquaredEuclideanDistance.class) //
+      new ObjectParameter<NumberVectorDistance<? super V>>(KMeans.DISTANCE_FUNCTION_ID, NumberVectorDistance.class, SquaredEuclideanDistance.class) //
           .grab(config, x -> {
             distance = x;
             if(!(distance instanceof EuclideanDistance) //

@@ -20,9 +20,7 @@
  */
 package elki.outlier.subspace;
 
-import elki.AbstractAlgorithm;
 import elki.clustering.subspace.SubspaceClusteringAlgorithm;
-import elki.outlier.OutlierAlgorithm;
 import elki.data.Cluster;
 import elki.data.Clustering;
 import elki.data.model.SubspaceModel;
@@ -36,8 +34,8 @@ import elki.database.ids.DBIDIter;
 import elki.database.ids.DBIDs;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
-import elki.logging.Logging;
 import elki.math.DoubleMinMax;
+import elki.outlier.OutlierAlgorithm;
 import elki.result.Metadata;
 import elki.result.outlier.InvertedOutlierScoreMeta;
 import elki.result.outlier.OutlierResult;
@@ -46,8 +44,8 @@ import elki.utilities.datastructures.BitsUtil;
 import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
@@ -72,17 +70,12 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
  */
 @Title("OutRank: ranking outliers in high dimensional data")
 @Description("Ranking outliers in high dimensional data - score 1")
-@Reference(authors = "Emmanuel Müller, Ira Assent, Uwe Steinhausen, Thomas Seidl", //
+@Reference(authors = "E. Müller, I. Assent, U. Steinhausen, T. Seidl", //
     title = "OutRank: ranking outliers in high dimensional data", //
     booktitle = "Proc. 24th Int. Conf. on Data Engineering (ICDE) Workshop on Ranking in Databases (DBRank)", //
     url = "https://doi.org/10.1109/ICDEW.2008.4498387", //
     bibkey = "DBLP:conf/icde/MullerASS08")
-public class OutRankS1 extends AbstractAlgorithm<OutlierResult> implements OutlierAlgorithm {
-  /**
-   * The logger for this class.
-   */
-  private static final Logging LOG = Logging.getLogger(OutRankS1.class);
-
+public class OutRankS1 implements OutlierAlgorithm {
   /**
    * Clustering algorithm to run.
    */
@@ -106,10 +99,15 @@ public class OutRankS1 extends AbstractAlgorithm<OutlierResult> implements Outli
   }
 
   @Override
-  public OutlierResult run(Database database) {
+  public TypeInformation[] getInputTypeRestriction() {
+    return clusteralg.getInputTypeRestriction();
+  }
+
+  @Override
+  public OutlierResult autorun(Database database) {
     DBIDs ids = database.getRelation(TypeUtil.ANY).getDBIDs();
     // Run the primary algorithm
-    Clustering<? extends SubspaceModel> clustering = clusteralg.run(database);
+    Clustering<? extends SubspaceModel> clustering = clusteralg.autorun(database);
 
     WritableDoubleDataStore score = DataStoreUtil.makeDoubleStorage(ids, DataStoreFactory.HINT_HOT);
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
@@ -140,16 +138,6 @@ public class OutRankS1 extends AbstractAlgorithm<OutlierResult> implements Outli
     OutlierResult res = new OutlierResult(meta, scoreResult);
     Metadata.hierarchyOf(res).addChild(clustering);
     return res;
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return clusteralg.getInputTypeRestriction();
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

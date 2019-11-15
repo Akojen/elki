@@ -64,14 +64,12 @@ public abstract class AbstractClusterAlgorithmTest extends AbstractSimpleAlgorit
    * @param clustering Clustering result
    * @param expected Expected score
    */
-  protected <O> void testFMeasure(Database database, Clustering<?> clustering, double expected) {
+  protected <O> void assertFMeasure(Database database, Clustering<?> clustering, double expected) {
     // Run by-label as reference
     ByLabelClustering bylabel = new ByLabelClustering();
-    Clustering<Model> rbl = bylabel.run(database);
+    Clustering<Model> rbl = bylabel.autorun(database);
 
-    ClusterContingencyTable ct = new ClusterContingencyTable(true, false);
-    ct.process(clustering, rbl);
-    double score = ct.getPaircount().f1Measure();
+    double score = new ClusterContingencyTable(true, false, clustering, rbl).getPaircount().f1Measure();
     Logging.getLogger(this.getClass()).verbose(this.getClass().getSimpleName() + " score: " + score + " expect: " + expected);
     assertEquals(this.getClass().getSimpleName() + ": Score does not match.", expected, score, 0.0001);
   }
@@ -82,7 +80,7 @@ public abstract class AbstractClusterAlgorithmTest extends AbstractSimpleAlgorit
    * @param clustering Clustering to test
    * @param expected Expected cluster sizes
    */
-  protected void testClusterSizes(Clustering<?> clustering, int[] expected) {
+  protected void assertClusterSizes(Clustering<?> clustering, int[] expected) {
     List<? extends Cluster<?>> clusters = clustering.getAllClusters();
     int[] sizes = new int[clusters.size()];
     for(int i = 0; i < sizes.length; ++i) {

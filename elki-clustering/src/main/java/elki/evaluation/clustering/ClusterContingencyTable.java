@@ -101,20 +101,13 @@ public class ClusterContingencyTable {
    * 
    * @param selfPairing Build self-pairs
    * @param breakNoiseClusters Break noise clusters into individual objects
-   */
-  public ClusterContingencyTable(boolean selfPairing, boolean breakNoiseClusters) {
-    super();
-    this.selfPairing = selfPairing;
-    this.breakNoiseClusters = breakNoiseClusters;
-  }
-
-  /**
-   * Process two clustering results.
-   * 
    * @param result1 First clustering
    * @param result2 Second clustering
    */
-  public void process(Clustering<?> result1, Clustering<?> result2) {
+  public ClusterContingencyTable(boolean selfPairing, boolean breakNoiseClusters, Clustering<?> result1, Clustering<?> result2) {
+    super();
+    this.selfPairing = selfPairing;
+    this.breakNoiseClusters = breakNoiseClusters;
     // Get the clusters
     final List<? extends Cluster<?>> cs1 = result1.getAllClusters();
     final List<? extends Cluster<?>> cs2 = result2.getAllClusters();
@@ -162,19 +155,13 @@ public class ClusterContingencyTable {
 
   @Override
   public String toString() {
-    StringBuilder buf = new StringBuilder();
+    StringBuilder buf = new StringBuilder(size1 * size2 * 10 + 10);
     if(contingency != null) {
-      for(int i1 = 0; i1 < size1 + 2; i1++) {
-        if(i1 >= size1) {
-          buf.append("------\n");
+      for(int i1 = 0; i1 <= size1; i1++) {
+        for(int i2 = 0; i2 <= size2; i2++) {
+          buf.append(contingency[i1][i2]).append(i2 < size2 ? " " : "| ");
         }
-        for(int i2 = 0; i2 < size2 + 2; i2++) {
-          if(i2 >= size2) {
-            buf.append("| ");
-          }
-          buf.append(contingency[i1][i2]).append(' ');
-        }
-        buf.append('\n');
+        buf.append(i1 < size1 ? "\n" : "------\n");
       }
     }
     return buf.toString();
@@ -186,10 +173,7 @@ public class ClusterContingencyTable {
    * @return Pair counting measures
    */
   public PairCounting getPaircount() {
-    if(paircount == null) {
-      paircount = new PairCounting(this);
-    }
-    return paircount;
+    return paircount != null ? paircount : (paircount = new PairCounting(this));
   }
 
   /**
@@ -198,10 +182,7 @@ public class ClusterContingencyTable {
    * @return Entropy based measures
    */
   public Entropy getEntropy() {
-    if(entropy == null) {
-      entropy = new Entropy(this);
-    }
-    return entropy;
+    return entropy != null ? entropy : (entropy = new Entropy(this));
   }
 
   /**
@@ -210,10 +191,7 @@ public class ClusterContingencyTable {
    * @return Edit-distance based measures
    */
   public EditDistance getEdit() {
-    if(edit == null) {
-      edit = new EditDistance(this);
-    }
-    return edit;
+    return edit != null ? edit : (edit = new EditDistance(this));
   }
 
   /**
@@ -222,10 +200,7 @@ public class ClusterContingencyTable {
    * @return BCubed measures
    */
   public BCubed getBCubed() {
-    if(bcubed == null) {
-      bcubed = new BCubed(this);
-    }
-    return bcubed;
+    return bcubed != null ? bcubed : (bcubed = new BCubed(this));
   }
 
   /**
@@ -234,10 +209,7 @@ public class ClusterContingencyTable {
    * @return Set-Matching measures
    */
   public SetMatchingPurity getSetMatching() {
-    if(smp == null) {
-      smp = new SetMatchingPurity(this);
-    }
-    return smp;
+    return smp != null ? smp : (smp = new SetMatchingPurity(this));
   }
 
   /**
@@ -268,6 +240,44 @@ public class ClusterContingencyTable {
           purity += rel * rel;
         }
         mv.put(purity, cs);
+      }
+    }
+    return mv;
+  }
+
+  /**
+   * Compute the adjusted average Gini for each cluster (in both clusterings -
+   * symmetric).
+   * 
+   * @return Mean and variance of Gini
+   */
+  public MeanVariance adjustedSymmetricGini() {
+    MeanVariance mv = new MeanVariance();
+    final double total = contingency[size1][size2];
+    for(int i1 = 0; i1 < size1; i1++) {
+      double purity = 0.0, exp = 0.0;
+      if(contingency[i1][size2] > 0) {
+        final double cs = contingency[i1][size2]; // sum, as double.
+        for(int i2 = 0; i2 < size2; i2++) {
+          double rel = contingency[i1][i2] / cs;
+          purity += rel * rel;
+          double e = contingency[size1][i2] / total;
+          exp += e * e;
+        }
+        mv.put((purity - exp) / (1 - exp), cs);
+      }
+    }
+    for(int i2 = 0; i2 < size2; i2++) {
+      double purity = 0.0, exp = 0.0;
+      if(contingency[size1][i2] > 0) {
+        final double cs = contingency[size1][i2]; // sum, as double.
+        for(int i1 = 0; i1 < size1; i1++) {
+          double rel = contingency[i1][i2] / cs;
+          purity += rel * rel;
+          double e = contingency[i1][size2] / total;
+          exp += e * e;
+        }
+        mv.put((purity - exp) / (1 - exp), cs);
       }
     }
     return mv;

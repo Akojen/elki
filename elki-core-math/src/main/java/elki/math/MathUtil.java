@@ -20,7 +20,6 @@
  */
 package elki.math;
 
-import java.math.BigInteger;
 import java.util.Random;
 
 import net.jafama.FastMath;
@@ -190,25 +189,6 @@ public final class MathUtil {
    */
   public static double log2(double x) {
     return FastMath.log(x) * ONE_BY_LOG2;
-  }
-
-  /**
-   * Compute the Factorial of n, often written as <code>c!</code> in
-   * mathematics.
-   * <p>
-   * Use this method if for large values of <code>n</code>.
-   *
-   * @param n Note: n &gt;= 0. This {@link BigInteger} <code>n</code> will be 0
-   *        after this method finishes.
-   * @return n * (n-1) * (n-2) * ... * 1
-   */
-  public static BigInteger factorial(BigInteger n) {
-    BigInteger nFac = BigInteger.ONE;
-    while(n.compareTo(BigInteger.ONE) > 0) {
-      nFac = nFac.multiply(n);
-      n = n.subtract(BigInteger.ONE);
-    }
-    return nFac;
   }
 
   /**
@@ -794,5 +774,17 @@ public final class MathUtil {
     return a <= b ? //
         a <= c ? (a <= d ? a : d) : (c <= d ? c : d) : //
         b <= c ? (b <= d ? b : d) : (c <= d ? c : d);
+  }
+
+  /**
+   * Clamp values to a given minimum and maximum.
+   * 
+   * @param value True value
+   * @param min Minimum
+   * @param max Maximum
+   * @return {@code value}, but at least {@code min} and at most {@code max}
+   */
+  public static double clamp(double value, double min, double max) {
+    return value < min ? min : value > max ? max : value;
   }
 }

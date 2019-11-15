@@ -24,22 +24,22 @@ import java.lang.ref.WeakReference;
 
 import elki.data.type.TypeInformation;
 import elki.database.ids.*;
+import elki.database.query.PrioritySearcher;
 import elki.database.query.distance.DatabaseDistanceQuery;
 import elki.database.query.distance.DistanceQuery;
-import elki.database.query.knn.KNNQuery;
-import elki.database.query.range.RangeQuery;
+import elki.database.query.knn.KNNSearcher;
+import elki.database.query.range.RangeSearcher;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
-import elki.index.DistanceIndex;
-import elki.index.IndexFactory;
-import elki.index.KNNIndex;
-import elki.index.RangeIndex;
+import elki.index.*;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.logging.statistics.LongStatistic;
+import elki.utilities.datastructures.QuickSelect;
+import elki.utilities.datastructures.arrays.DoubleIntegerArrayQuickSort;
 import elki.utilities.exceptions.AbortException;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.ObjectParameter;
 
@@ -62,7 +62,7 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
  *
  * @param <O> Object type
  */
-public class PrecomputedDistanceMatrix<O> implements DistanceIndex<O>, RangeIndex<O>, KNNIndex<O> {
+public class PrecomputedDistanceMatrix<O> implements DistanceIndex<O>, RangeIndex<O>, KNNIndex<O>, DistancePriorityIndex<O> {
   /**
    * Class logger.
    */
@@ -89,11 +89,6 @@ public class PrecomputedDistanceMatrix<O> implements DistanceIndex<O>, RangeInde
   private DBIDRange ids;
 
   /**
-   * Size of DBID range.
-   */
-  private int size;
-
-  /**
    * Constructor.
    *
    * @param relation Data relation
@@ -113,13 +108,12 @@ public class PrecomputedDistanceMatrix<O> implements DistanceIndex<O>, RangeInde
 
   @Override
   public void initialize() {
-    size = ids.size();
-    if(size > 65536) {
+    if(ids.size() > 65536) {
       throw new AbortException("Distance matrixes currently have a limit of 65536 objects (~16 GB). After this, the array size exceeds the Java integer range, and a different data structure needs to be used.");
     }
     DistanceQuery<O> distanceQuery = distance.instantiate(refrelation.get());
 
-    final int msize = triangleSize(size);
+    final int msize = triangleSize(ids.size());
     matrix = new double[msize];
     DBIDArrayIter ix = ids.iter(), iy = ids.iter();
 
@@ -182,13 +176,33 @@ public class PrecomputedDistanceMatrix<O> implements DistanceIndex<O>, RangeInde
   }
 
   @Override
-  public KNNQuery<O> getKNNQuery(DistanceQuery<O> distanceQuery, int maxk, int flags) {
+  public KNNSearcher<O> kNNByObject(DistanceQuery<O> distanceQuery, int maxk, int flags) {
+    return null; // not possible
+  }
+
+  @Override
+  public KNNSearcher<DBIDRef> kNNByDBID(DistanceQuery<O> distanceQuery, int maxk, int flags) {
     return this.distance.equals(distanceQuery.getDistance()) ? new PrecomputedKNNQuery() : null;
   }
 
   @Override
-  public RangeQuery<O> getRangeQuery(DistanceQuery<O> distanceQuery, double maxrange, int flags) {
+  public RangeSearcher<O> rangeByObject(DistanceQuery<O> distanceQuery, double maxrange, int flags) {
+    return null; // not possible
+  }
+
+  @Override
+  public RangeSearcher<DBIDRef> rangeByDBID(DistanceQuery<O> distanceQuery, double maxrange, int flags) {
     return this.distance.equals(distanceQuery.getDistance()) ? new PrecomputedRangeQuery() : null;
+  }
+
+  @Override
+  public PrioritySearcher<O> priorityByObject(DistanceQuery<O> distanceQuery, double maxrange, int flags) {
+    return null; // not possible
+  }
+
+  @Override
+  public PrioritySearcher<DBIDRef> priorityByDBID(DistanceQuery<O> distanceQuery, double maxrange, int flags) {
+    return this.distance.equals(distanceQuery.getDistance()) ? new PrecomputedDistancePrioritySearcher() : null;
   }
 
   /**
@@ -196,7 +210,7 @@ public class PrecomputedDistanceMatrix<O> implements DistanceIndex<O>, RangeInde
    *
    * @author Erich Schubert
    */
-  private class PrecomputedDistanceQuery implements DatabaseDistanceQuery<O> {
+  public class PrecomputedDistanceQuery implements DatabaseDistanceQuery<O> {
     @Override
     public double distance(DBIDRef id1, DBIDRef id2) {
       final int x = ids.getOffset(id1), y = ids.getOffset(id2);
@@ -219,36 +233,32 @@ public class PrecomputedDistanceMatrix<O> implements DistanceIndex<O>, RangeInde
    *
    * @author Erich Schubert
    */
-  private class PrecomputedRangeQuery implements RangeQuery<O> {
-    @Override
-    public ModifiableDoubleDBIDList getRangeForObject(O obj, double range, ModifiableDoubleDBIDList result) {
-      throw new AbortException("Preprocessor KNN query only supports ID queries.");
-    }
+  public class PrecomputedRangeQuery implements RangeSearcher<DBIDRef> {
+    /**
+     * Iterator for mapping.
+     */
+    DBIDArrayIter it = ids.iter();
 
     @Override
-    public ModifiableDoubleDBIDList getRangeForDBID(DBIDRef id, double range, ModifiableDoubleDBIDList result) {
+    public ModifiableDoubleDBIDList getRange(DBIDRef id, double range, ModifiableDoubleDBIDList result) {
       result.add(0., id);
-      DBIDArrayIter it = ids.iter();
-
       final int x = ids.getOffset(id);
       // Case y < x: triangleSize(x) + y
       int pos = triangleSize(x);
-      for(int y = 0; y < x; y++) {
+      for(int y = 0; y < x; y++, pos++) {
         final double dist = matrix[pos];
         if(dist <= range) {
           result.add(dist, it.seek(y));
         }
-        pos++;
       }
       assert (pos == triangleSize(x + 1));
       // Case y > x: triangleSize(y) + x
       pos = triangleSize(x + 1) + x;
-      for(int y = x + 1; y < size; y++) {
+      for(int y = x + 1, size = ids.size(); y < size; pos += y++) {
         final double dist = matrix[pos];
         if(dist <= range) {
           result.add(dist, it.seek(y));
         }
-        pos += y;
       }
       return result;
     }
@@ -259,39 +269,172 @@ public class PrecomputedDistanceMatrix<O> implements DistanceIndex<O>, RangeInde
    *
    * @author Erich Schubert
    */
-  private class PrecomputedKNNQuery implements KNNQuery<O> {
+  public class PrecomputedKNNQuery implements KNNSearcher<DBIDRef> {
+    /**
+     * Iterator for mapping.
+     */
+    DBIDArrayIter it = ids.iter();
+
     @Override
-    public KNNList getKNNForDBID(DBIDRef id, int k) {
+    public KNNList getKNN(DBIDRef id, int k) {
       KNNHeap heap = DBIDUtil.newHeap(k);
       heap.insert(0., id);
-      DBIDArrayIter it = ids.iter();
       double max = Double.POSITIVE_INFINITY;
       final int x = ids.getOffset(id);
       // Case y < x: triangleSize(x) + y
       int pos = triangleSize(x);
-      for(int y = 0; y < x; y++) {
+      for(int y = 0; y < x; y++, pos++) {
         final double dist = matrix[pos];
-        if(dist <= max) {
-          max = heap.insert(dist, it.seek(y));
-        }
-        pos++;
+        max = dist <= max ? heap.insert(dist, it.seek(y)) : max;
       }
       assert (pos == triangleSize(x + 1));
       // Case y > x: triangleSize(y) + x
       pos = triangleSize(x + 1) + x;
-      for(int y = x + 1; y < size; y++) {
+      for(int y = x + 1, size = ids.size(); y < size; pos += y++) {
         final double dist = matrix[pos];
-        if(dist <= max) {
-          max = heap.insert(dist, it.seek(y));
-        }
-        pos += y;
+        max = dist <= max ? heap.insert(dist, it.seek(y)) : max;
       }
       return heap.toKNNList();
     }
+  }
+
+  /**
+   * Range query using the distance matrix.
+   *
+   * @author Erich Schubert
+   */
+  public class PrecomputedDistancePrioritySearcher implements PrioritySearcher<DBIDRef>, QuickSelect.Adapter<PrecomputedDistancePrioritySearcher> {
+    /**
+     * Iterator for mapping.
+     */
+    DBIDArrayIter it = ids.iter();
+
+    /**
+     * Current position
+     */
+    int off;
+
+    /**
+     * Sorting position
+     */
+    int sorted;
+
+    /**
+     * "side effect" sorting positions
+     */
+    int lbsorted, upsorted;
+
+    /**
+     * Query threshold
+     */
+    double threshold;
+
+    /**
+     * Object indexes
+     */
+    int[] idx = new int[ids.size()];
+
+    /**
+     * Sorted distances
+     */
+    double[] dists = new double[ids.size()];
 
     @Override
-    public KNNList getKNNForObject(O obj, int k) {
-      throw new AbortException("Preprocessor KNN query only supports ID queries.");
+    public PrioritySearcher<DBIDRef> search(DBIDRef query) {
+      off = 0;
+      threshold = Double.POSITIVE_INFINITY;
+      int x = ids.getOffset(query);
+      int pos = triangleSize(x);
+      // Initialize ids:
+      idx[0] = x;
+      for(int y = 0; y < x; y++) {
+        idx[y + 1] = y;
+      }
+      for(int y = x + 1, size = dists.length; y < size; y++) {
+        idx[y] = y;
+      }
+      // Initialize distances:
+      dists[0] = 0;
+      System.arraycopy(matrix, pos, dists, 1, x);
+      pos = triangleSize(x + 1) + x;
+      for(int y = x + 1, size = dists.length; y < size; pos += y++) {
+        dists[y] = matrix[pos];
+      }
+      sorted = 1;
+      return this;
+    }
+
+    /**
+     * Partially sort the data.
+     * 
+     * @param target Target
+     */
+    private void partialSort(int target) {
+      if(sorted < target) {
+        lbsorted = target - 1;
+        upsorted = target;
+        // FIXME: improve this by merging QuickSelect and QuickSort into a
+        // full-blown PartialQuickSort that can guarantee any subset to be
+        // sorted correctly.
+        QuickSelect.quickSelect(this, this, sorted, dists.length, target - 1);
+        // As side effect, [lbsorted:upsorted[ was sorted by quickSelect.
+        if(sorted < lbsorted) { // Unsorted parts below target:
+          DoubleIntegerArrayQuickSort.sort(dists, idx, sorted, lbsorted);
+        }
+        sorted = upsorted;
+      }
+    }
+
+    @Override
+    public DBIDIter advance() {
+      if(++off >= sorted) {
+        partialSort(Math.min(sorted == 1 ? 10 : sorted + (sorted >>> 1), dists.length));
+      }
+      return this;
+    }
+
+    @Override
+    public boolean valid() {
+      return off < ids.size() && dists[off] <= threshold;
+    }
+
+    @Override
+    public PrioritySearcher<DBIDRef> decreaseCutoff(double threshold) {
+      this.threshold = threshold;
+      return this;
+    }
+
+    @Override
+    public int internalGetIndex() {
+      return it.seek(idx[off]).internalGetIndex();
+    }
+
+    @Override
+    public double computeExactDistance() {
+      return dists[off];
+    }
+
+    @Override
+    public int compare(PrecomputedDistanceMatrix<O>.PrecomputedDistancePrioritySearcher data, int i, int j) {
+      return Double.compare(dists[i], dists[j]);
+    }
+
+    @Override
+    public void swap(PrecomputedDistanceMatrix<O>.PrecomputedDistancePrioritySearcher data, int i, int j) {
+      final int tmp = idx[i];
+      idx[i] = idx[j];
+      idx[j] = tmp;
+      final double tmp2 = dists[i];
+      dists[i] = dists[j];
+      dists[j] = tmp2;
+    }
+
+    @Override
+    public void isSorted(PrecomputedDistanceMatrix<O>.PrecomputedDistancePrioritySearcher data, int begin, int end) {
+      // This is a pretty obscure logic. See FIXME above to use a full-blown
+      // PartialQuickSort instead of this callback hack.
+      lbsorted = begin < lbsorted && end >= lbsorted ? begin : lbsorted;
+      upsorted = begin <= upsorted && end > upsorted ? end : upsorted;
     }
   }
 
@@ -335,7 +478,7 @@ public class PrecomputedDistanceMatrix<O> implements DistanceIndex<O>, RangeInde
     }
 
     /**
-     * Par.
+     * Parameterizer.
      *
      * @author Erich Schubert
      *

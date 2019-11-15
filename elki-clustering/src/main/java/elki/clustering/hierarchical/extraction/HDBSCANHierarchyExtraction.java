@@ -23,7 +23,7 @@ package elki.clustering.hierarchical.extraction;
 import java.util.ArrayList;
 import java.util.Collection;
 
-import elki.AbstractAlgorithm;
+import elki.Algorithm;
 import elki.clustering.ClusteringAlgorithm;
 import elki.clustering.hierarchical.HierarchicalClusteringAlgorithm;
 import elki.clustering.hierarchical.PointerDensityHierarchyRepresentationResult;
@@ -115,9 +115,8 @@ public class HDBSCANHierarchyExtraction implements ClusteringAlgorithm<Clusterin
   }
 
   @Override
-  public Clustering<DendrogramModel> run(Database database) {
-    PointerHierarchyRepresentationResult pointerresult = algorithm.run(database);
-    return run(pointerresult);
+  public Clustering<DendrogramModel> autorun(Database database) {
+    return run(algorithm.autorun(database));
   }
 
   /**
@@ -525,7 +524,7 @@ public class HDBSCANHierarchyExtraction implements ClusteringAlgorithm<Clusterin
 
     @Override
     public void configure(Parameterization config) {
-      new ObjectParameter<HierarchicalClusteringAlgorithm>(AbstractAlgorithm.ALGORITHM_ID, HierarchicalClusteringAlgorithm.class) //
+      new ObjectParameter<HierarchicalClusteringAlgorithm>(Algorithm.Utils.ALGORITHM_ID, HierarchicalClusteringAlgorithm.class) //
           .grab(config, x -> algorithm = x);
       new IntParameter(MINCLUSTERSIZE_ID, 1) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //

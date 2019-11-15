@@ -21,10 +21,10 @@
 package elki.datasource;
 
 import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -60,7 +60,7 @@ public class ConcatenateFilesDatabaseConnection extends AbstractDatabaseConnecti
   /**
    * Input file list.
    */
-  private List<File> files;
+  private List<Path> files;
 
   /**
    * The parser.
@@ -74,7 +74,7 @@ public class ConcatenateFilesDatabaseConnection extends AbstractDatabaseConnecti
    * @param parser Parser
    * @param filters Filters
    */
-  public ConcatenateFilesDatabaseConnection(List<File> files, Parser parser, List<? extends ObjectFilter> filters) {
+  public ConcatenateFilesDatabaseConnection(List<Path> files, Parser parser, List<? extends ObjectFilter> filters) {
     super(filters);
     this.files = files;
     this.parser = parser;
@@ -84,10 +84,11 @@ public class ConcatenateFilesDatabaseConnection extends AbstractDatabaseConnecti
   public MultipleObjectsBundle loadData() {
     MultipleObjectsBundle objects = new MultipleObjectsBundle();
     objects.appendColumn(TypeUtil.STRING, new ArrayList<>());
-    for(File file : files) {
-      String filestr = file.getPath();
-      try (FileInputStream fis = new FileInputStream(file); //
-          InputStream inputStream = FileUtil.tryGzipInput(new BufferedInputStream(fis))) {
+    for(Path file : files) {
+      String filestr = file.toString();
+      try (InputStream fis = Files.newInputStream(file); //
+          BufferedInputStream bis = new BufferedInputStream(fis); //
+          InputStream inputStream = FileUtil.tryGzipInput(bis)) {
         final BundleStreamSource source;
         if(parser instanceof StreamingParser) {
           final StreamingParser streamParser = (StreamingParser) parser;
@@ -160,7 +161,7 @@ public class ConcatenateFilesDatabaseConnection extends AbstractDatabaseConnecti
     /**
      * The input files.
      */
-    private List<File> files;
+    private List<Path> files;
 
     @Override
     public void configure(Parameterization config) {

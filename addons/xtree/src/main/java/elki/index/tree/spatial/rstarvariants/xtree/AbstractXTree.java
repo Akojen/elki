@@ -21,7 +21,8 @@
 package elki.index.tree.spatial.rstarvariants.xtree;
 
 import java.io.*;
-import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -305,9 +306,9 @@ public abstract class AbstractXTree<N extends AbstractXTreeNode<N>> extends Abst
     long offset = (ph.getReservedPages() + npid) * ph.getPageSize();
     ph.setSupernode_offset(npid * ph.getPageSize());
     ph.setNumberOfElements(num_elements);
-    RandomAccessFile ra_file = ((PersistentPageFile<?>) file).getFile();
+    FileChannel ra_file = ((PersistentPageFile<?>) file).getFile();
     ph.writeHeader(ra_file);
-    ra_file.seek(offset);
+    ra_file.position(offset);
     long nBytes = 0;
     for(Iterator<N> iterator = supernodes.values().iterator(); iterator.hasNext();) {
       N supernode = iterator.next();
@@ -323,7 +324,7 @@ public abstract class AbstractXTree<N extends AbstractXTreeNode<N>> extends Abst
       }
       System.arraycopy(array, 0, sn_array, 0, array.length);
       // file.countWrite();
-      ra_file.write(sn_array);
+      ra_file.write(ByteBuffer.wrap(sn_array));
       nBytes += sn_array.length;
     }
     return nBytes;
@@ -368,7 +369,7 @@ public abstract class AbstractXTree<N extends AbstractXTreeNode<N>> extends Abst
 
     // read supernodes (if there are any)
     if(superNodeOffset > 0) {
-      RandomAccessFile ra_file = ((PersistentPageFile<?>) file).getFile();
+      FileChannel ra_file = ((PersistentPageFile<?>) file).getFile();
       long offset = header.getReservedPages() * file.getPageSize() + superNodeOffset;
       int bs = 0 // omit this: 4 // EMPTY_PAGE or FILLED_PAGE ?
           + 4 // id
@@ -379,10 +380,12 @@ public abstract class AbstractXTree<N extends AbstractXTreeNode<N>> extends Abst
       byte[] buffer = new byte[bs];
       try {
         // go to supernode region
-        ra_file.seek(offset);
-        while(ra_file.getFilePointer() + file.getPageSize() <= ra_file.length()) {
+        ra_file.position(offset);
+        while(ra_file.position() + file.getPageSize() <= ra_file.size()) {
           // file.countRead();
-          ra_file.read(buffer);
+          if(ra_file.read(ByteBuffer.wrap(buffer)) != buffer.length) {
+            throw new IOException("Short read when reading the supernode header");
+          }
           ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(buffer));
           int id = ois.readInt();
           ois.readBoolean(); // iLeaf
@@ -404,11 +407,13 @@ public abstract class AbstractXTree<N extends AbstractXTreeNode<N>> extends Abst
             throw new AbortException("InstantiationException instantiating a supernode", e);
           }
           // file.countRead();
-          ra_file.seek(offset);
+          ra_file.position(offset);
           byte[] superbuffer = new byte[file.getPageSize() * (int) Math.ceil((double) capacity / dirCapacity)];
           // increase offset for the next position seek
           offset += superbuffer.length;
-          ra_file.read(superbuffer);
+          if(ra_file.read(ByteBuffer.wrap(superbuffer)) != superbuffer.length) {
+            throw new IOException("Short read when reading the supernode.");
+          }
           ois = new ObjectInputStream(new ByteArrayInputStream(buffer));
           try {
             // read from file and add to supernode map
@@ -1112,13 +1117,9 @@ public abstract class AbstractXTree<N extends AbstractXTreeNode<N>> extends Abst
    */
   @Override
   public String toString() {
-    long dirNodes = 0;
-    long superNodes = 0;
-    long leafNodes = 0;
-    long objects = 0;
-    long maxSuperCapacity = -1;
-    long minSuperCapacity = Long.MAX_VALUE;
-    BigInteger totalCapacity = BigInteger.ZERO;
+    long dirNodes = 0, superNodes = 0, leafNodes = 0, objects = 0;
+    long maxSuperCapacity = -1, minSuperCapacity = Long.MAX_VALUE;
+    long totalCapacity = 0;
     int levels = 0;
 
     N node = getRoot();
@@ -1157,7 +1158,10 @@ public abstract class AbstractXTree<N extends AbstractXTreeNode<N>> extends Abst
             dirNodes++;
           }
         }
-        totalCapacity = totalCapacity.add(BigInteger.valueOf(node.getCapacity()));
+        totalCapacity += node.getCapacity();
+        if(totalCapacity < 0) {
+          throw new ArithmeticException("long overflow");
+        }
       }
     }
     assert objects == num_elements : "objects=" + objects + ", size=" + num_elements;
@@ -1169,7 +1173,7 @@ public abstract class AbstractXTree<N extends AbstractXTreeNode<N>> extends Abst
         .append("min_fanout = ").append(settings.min_fanout).append(", max_overlap = ").append(settings.max_overlap).append((settings.overlap_type == Overlap.DATA_OVERLAP ? " data overlap" : " volume overlap")).append(", \n") //
         // PageFileUtil.appendPageFileStatistics(result,
         // getPageFileStatistics());
-        .append("Storage Quota ").append(BigInteger.valueOf(objects + dirNodes + superNodes + leafNodes).multiply(BigInteger.valueOf(100)).divide(totalCapacity).toString()).append("%\n") //
+        .append("Storage Quota ").append((objects + dirNodes + superNodes + leafNodes) * 100 / totalCapacity).append("%\n") //
         .toString();
   }
 }

@@ -20,8 +20,6 @@
  */
 package elki.outlier.trivial;
 
-import elki.outlier.OutlierAlgorithm;
-import elki.AbstractAlgorithm;
 import elki.data.NumberVector;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
@@ -32,9 +30,9 @@ import elki.database.ids.DBIDIter;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
-import elki.logging.Logging;
 import elki.math.DoubleMinMax;
 import elki.math.Mean;
+import elki.outlier.OutlierAlgorithm;
 import elki.result.outlier.BasicOutlierScoreMeta;
 import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
@@ -49,12 +47,7 @@ import elki.utilities.Priority;
  * @since 0.6.0
  */
 @Priority(Priority.SUPPLEMENTARY - 50)
-public class TrivialAverageCoordinateOutlier extends AbstractAlgorithm<OutlierResult> implements OutlierAlgorithm {
-  /**
-   * Our logger.
-   */
-  private static final Logging logger = Logging.getLogger(TrivialAverageCoordinateOutlier.class);
-
+public class TrivialAverageCoordinateOutlier implements OutlierAlgorithm {
   /**
    * Constructor.
    */
@@ -80,7 +73,7 @@ public class TrivialAverageCoordinateOutlier extends AbstractAlgorithm<OutlierRe
     for(DBIDIter iditer = relation.iterDBIDs(); iditer.valid(); iditer.advance()) {
       m.reset();
       NumberVector nv = relation.get(iditer);
-      for (int i = 0; i < nv.getDimensionality(); i++) {
+      for(int i = 0; i < nv.getDimensionality(); i++) {
         m.put(nv.doubleValue(i));
       }
       final double score = m.getMean();
@@ -90,10 +83,5 @@ public class TrivialAverageCoordinateOutlier extends AbstractAlgorithm<OutlierRe
     DoubleRelation scoreres = new MaterializedDoubleRelation("Trivial mean score", relation.getDBIDs(), scores);
     OutlierScoreMeta meta = new BasicOutlierScoreMeta(minmax.getMin(), minmax.getMax());
     return new OutlierResult(meta, scoreres);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return logger;
   }
 }

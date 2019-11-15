@@ -20,7 +20,7 @@
  */
 package elki.outlier.lof;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
@@ -30,11 +30,12 @@ import elki.database.datastore.WritableDoubleDataStore;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
 import elki.database.query.distance.DistanceQuery;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.logging.progress.StepProgress;
@@ -46,9 +47,11 @@ import elki.result.outlier.QuotientOutlierScoreMeta;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Connectivity-based Outlier Factor (COF).
@@ -70,11 +73,16 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     booktitle = "In Advances in Knowledge Discovery and Data Mining", //
     url = "https://doi.org/10.1007/3-540-47887-6_53", //
     bibkey = "DBLP:conf/pakdd/TangCFC02")
-public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class COF<O> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(COF.class);
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * The number of neighbors to query (including the query point!)
@@ -83,13 +91,14 @@ public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
 
   /**
    * Constructor.
-   *
+   * 
+   * @param distance the neighborhood distance function
    * @param k the number of neighbors to use for comparison (excluding the query
    *        point)
-   * @param distance the neighborhood distance function
    */
-  public COF(int k, Distance<? super O> distance) {
-    super(distance);
+  public COF(Distance<? super O> distance, int k) {
+    super();
+    this.distance = distance;
     this.k = k + 1; // + query point
   }
 
@@ -103,7 +112,7 @@ public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
     StepProgress stepprog = LOG.isVerbose() ? new StepProgress("COF", 3) : null;
     DistanceQuery<O> dq = new QueryBuilder<>(relation, distance).distanceQuery();
     LOG.beginStep(stepprog, 1, "Materializing COF neighborhoods.");
-    KNNQuery<O> knnq = new QueryBuilder<>(dq).precomputed().kNNQuery(k);
+    KNNSearcher<DBIDRef> knnq = new QueryBuilder<>(dq).precomputed().kNNByDBID(k);
     DBIDs ids = relation.getDBIDs();
 
     LOG.beginStep(stepprog, 2, "Computing Average Chaining Distances.");
@@ -131,7 +140,7 @@ public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * to approximate this value using a weighted mean that assumes every object
    * is reached from the previous point (but actually every point could be best
    * reachable from the first, in which case this does not make much sense.)
-   *
+   * <p>
    * TODO: can we accelerate this by using the kNN of the neighbors?
    *
    * @param knnq KNN query
@@ -139,13 +148,13 @@ public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * @param ids IDs to process
    * @param acds Storage for average chaining distances
    */
-  protected void computeAverageChainingDistances(KNNQuery<O> knnq, DistanceQuery<O> dq, DBIDs ids, WritableDoubleDataStore acds) {
+  protected void computeAverageChainingDistances(KNNSearcher<DBIDRef> knnq, DistanceQuery<O> dq, DBIDs ids, WritableDoubleDataStore acds) {
     FiniteProgress lrdsProgress = LOG.isVerbose() ? new FiniteProgress("Computing average chaining distances", ids.size(), LOG) : null;
 
     // Compute the chaining distances.
     // We do <i>not</i> bother to materialize the chaining order.
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
-      final KNNList neighbors = knnq.getKNNForDBID(iter, k);
+      final KNNList neighbors = knnq.getKNN(iter, k);
       final int r = neighbors.size();
       DoubleDBIDListIter it1 = neighbors.iter(), it2 = neighbors.iter();
       // Store the current lowest reachability.
@@ -198,10 +207,10 @@ public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * @param cofs Connectivity outlier factor storage
    * @param cofminmax Score minimum/maximum tracker
    */
-  private void computeCOFScores(KNNQuery<O> knnq, DBIDs ids, DoubleDataStore acds, WritableDoubleDataStore cofs, DoubleMinMax cofminmax) {
+  private void computeCOFScores(KNNSearcher<DBIDRef> knnq, DBIDs ids, DoubleDataStore acds, WritableDoubleDataStore cofs, DoubleMinMax cofminmax) {
     FiniteProgress progressCOFs = LOG.isVerbose() ? new FiniteProgress("COF for objects", ids.size(), LOG) : null;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
-      final KNNList neighbors = knnq.getKNNForDBID(iter, k);
+      final KNNList neighbors = knnq.getKNN(iter, k);
       // Aggregate the average chaining distances of all neighbors:
       double sum = 0.;
       for(DBIDIter neighbor = neighbors.iter(); neighbor.valid(); neighbor.advance()) {
@@ -223,12 +232,7 @@ public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
 
   @Override
   public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -240,7 +244,7 @@ public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    *
    * @param <O> Object type
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Parameter to specify the neighborhood size for COF. This does not include
      * the query object.
@@ -252,9 +256,15 @@ public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
      */
     protected int k;
 
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(K_ID) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> k = x);
@@ -262,7 +272,7 @@ public class COF<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
 
     @Override
     public COF<O> make() {
-      return new COF<>(k, distance);
+      return new COF<>(distance, k);
     }
   }
 }

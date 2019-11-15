@@ -26,20 +26,17 @@ import elki.index.AbstractIndexStructureTest;
 import elki.utilities.ELKIBuilder;
 
 /**
- * Unit test for the iDistance index.
+ * Unit test for the {@link InMemoryInvertedIndex} index.
  * 
  * @author Erich Schubert
  * @since 0.7.0
  */
 public class InMemoryInvertedIndexTest extends AbstractIndexStructureTest {
-  /**
-   * Test {@link InMemoryInvertedIndex}.
-   */
   @Test
   public void testInvertedIndex() {
     // We could have used "new InMemoryInvertedIndex.Factory()", but we also
     // want to test the parameterizer code.
     InMemoryInvertedIndex.Factory<?> factory = new ELKIBuilder<>(InMemoryInvertedIndex.Factory.class).build();
-    testExactCosine(factory, InMemoryInvertedIndex.CosineKNNQuery.class, InMemoryInvertedIndex.CosineRangeQuery.class);
+    assertExactCosine(factory, InMemoryInvertedIndex.CosineKNNQuery.class, InMemoryInvertedIndex.CosineRangeQuery.class);
   }
 }

@@ -27,7 +27,7 @@ import static elki.utilities.io.FormatUtil.formatTo;
 import java.text.NumberFormat;
 import java.util.Locale;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.NumberVector;
 import elki.data.model.CorrelationAnalysisSolution;
 import elki.data.type.TypeInformation;
@@ -38,6 +38,7 @@ import elki.database.query.QueryBuilder;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
 import elki.distance.NumberVectorDistance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.math.linearalgebra.Centroid;
 import elki.math.linearalgebra.LinearEquationSystem;
@@ -51,6 +52,7 @@ import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.Flag;
@@ -82,14 +84,19 @@ import elki.utilities.random.RandomFactory;
     url = "https://doi.org/10.1145/1150402.1150408", //
     bibkey = "DBLP:conf/kdd/AchtertBKKZ06")
 @Priority(Priority.DEFAULT - 5) // Mostly used inside others, not standalone
-public class DependencyDerivator<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<NumberVectorDistance<? super V>, CorrelationAnalysisSolution<V>> {
+public class DependencyDerivator<V extends NumberVector> implements Algorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(DependencyDerivator.class);
 
   /**
-   * Holds the value of {@link Par#SAMPLE_SIZE_ID}.
+   * Distance function used.
+   */
+  private NumberVectorDistance<? super V> distance;
+
+  /**
+   * The number of samples to draw.
    */
   private final int sampleSize;
 
@@ -124,12 +131,18 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
    * @param randomsample flag for random sampling
    */
   public DependencyDerivator(NumberVectorDistance<? super V> distance, NumberFormat nf, PCARunner pca, EigenPairFilter filter, int sampleSize, boolean randomsample) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.nf = nf;
     this.pca = pca;
     this.filter = filter;
     this.sampleSize = sampleSize;
     this.randomsample = randomsample;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
   }
 
   /**
@@ -140,7 +153,7 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
    * @return the CorrelationAnalysisSolution computed by this
    *         DependencyDerivator
    */
-  public CorrelationAnalysisSolution<V> run(Relation<V> relation) {
+  public CorrelationAnalysisSolution run(Relation<V> relation) {
     if(LOG.isVerbose()) {
       LOG.verbose("retrieving database objects...");
     }
@@ -155,8 +168,8 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
       ids = DBIDUtil.randomSample(relation.getDBIDs(), sampleSize, RandomFactory.DEFAULT);
     }
     else {
-      ids = new QueryBuilder<>(relation, distance).cheapOnly().kNNQuery(sampleSize) //
-          .getKNNForObject(centroidDV, sampleSize);
+      ids = new QueryBuilder<>(relation, distance).cheapOnly().kNNByObject(sampleSize) //
+          .getKNN(centroidDV, sampleSize);
     }
     return generateModel(relation, ids, centroid.getArrayRef());
   }
@@ -169,7 +182,7 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
    * @param ids the set of ids
    * @return a matrix of equations describing the dependencies
    */
-  public CorrelationAnalysisSolution<V> generateModel(Relation<V> db, DBIDs ids) {
+  public CorrelationAnalysisSolution generateModel(Relation<V> db, DBIDs ids) {
     return generateModel(db, ids, Centroid.make(db, ids).getArrayRef());
   }
 
@@ -181,7 +194,7 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
    * @param centroid the centroid
    * @return a matrix of equations describing the dependencies
    */
-  public CorrelationAnalysisSolution<V> generateModel(Relation<V> relation, DBIDs ids, double[] centroid) {
+  public CorrelationAnalysisSolution generateModel(Relation<V> relation, DBIDs ids, double[] centroid) {
     if(LOG.isDebuggingFine()) {
       LOG.debugFine("PCA...");
     }
@@ -194,7 +207,7 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
 
     // TODO: what if we don't have any weak eigenvectors?
     if(transposedWeakEigenvectors.length == 0) {
-      return new CorrelationAnalysisSolution<>(null, relation, transpose(transposedStrongEigenvectors), new double[0][], pcares.similarityMatrix(), centroid);
+      return new CorrelationAnalysisSolution(null, relation, transpose(transposedStrongEigenvectors), new double[0][], pcares.similarityMatrix(), centroid);
     }
     // double[][] transposedWeakEigenvectors = transpose(weakEigenvectors);
     if(LOG.isDebugging()) {
@@ -223,7 +236,7 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
     LinearEquationSystem lq = new LinearEquationSystem(copy(transposedWeakEigenvectors), b);
     lq.solveByTotalPivotSearch();
 
-    CorrelationAnalysisSolution<V> sol = new CorrelationAnalysisSolution<>(lq, relation, transpose(transposedStrongEigenvectors), transpose(transposedWeakEigenvectors), pcares.similarityMatrix(), centroid);
+    CorrelationAnalysisSolution sol = new CorrelationAnalysisSolution(lq, relation, transpose(transposedStrongEigenvectors), transpose(transposedWeakEigenvectors), pcares.similarityMatrix(), centroid);
     if(LOG.isDebuggingFine()) {
       LOG.debugFine(new StringBuilder().append("Solution:\n") //
           .append("Standard deviation ").append(sol.getStandardDeviation()) //
@@ -232,22 +245,12 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
     return sol;
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
    * @author Erich Schubert
    */
-  public static class Par<V extends NumberVector> extends AbstractDistanceBasedAlgorithm.Par<NumberVectorDistance<? super V>> {
+  public static class Par<V extends NumberVector> implements Parameterizer {
     /**
      * Flag to use random sample (use knn query around centroid, if flag is not
      * set).
@@ -265,6 +268,11 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
      * sample to use, must be an integer greater than 0.
      */
     public static final OptionID SAMPLE_SIZE_ID = new OptionID("derivator.sampleSize", "Threshold for the size of the random sample to use. " + "Default value is size of the complete dataset.");
+
+    /**
+     * The distance function to use.
+     */
+    protected NumberVectorDistance<? super V> distance;
 
     /**
      * Output accuracy.
@@ -292,13 +300,9 @@ public class DependencyDerivator<V extends NumberVector> extends AbstractDistanc
     protected EigenPairFilter filter;
 
     @Override
-    public Class<?> getDistanceRestriction() {
-      return NumberVectorDistance.class;
-    }
-
-    @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<NumberVectorDistance<? super V>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, NumberVectorDistance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(OUTPUT_ACCURACY_ID, 4) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ZERO_INT) //
           .grab(config, x -> outputAccuracy = x);

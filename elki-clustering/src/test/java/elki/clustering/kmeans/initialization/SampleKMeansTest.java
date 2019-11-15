@@ -52,8 +52,8 @@ public class SampleKMeansTest extends AbstractClusterAlgorithmTest {
         .with(SampleKMeans.Par.KMEANS_ID, HamerlyKMeans.class) //
         .with(KMeans.SEED_ID, 8) //
         .with(SampleKMeans.Par.SAMPLE_ID, 100) //
-        .build().run(db);
-    testFMeasure(db, result, 0.99601);
-    testClusterSizes(result, new int[] { 199, 199, 200, 201, 201 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.99601);
+    assertClusterSizes(result, new int[] { 199, 199, 200, 201, 201 });
   }
 }

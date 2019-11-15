@@ -23,7 +23,6 @@ package elki.outlier.subspace;
 import java.util.*;
 
 import elki.data.NumberVector;
-import elki.database.Database;
 import elki.database.datastore.DataStoreFactory;
 import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.WritableDoubleDataStore;
@@ -124,11 +123,10 @@ public class AggarwalYuEvolutionary<V extends NumberVector> extends AbstractAgga
   /**
    * Performs the evolutionary algorithm on the given database.
    *
-   * @param database Database
    * @param relation Relation
    * @return Result
    */
-  public OutlierResult run(Database database, Relation<V> relation) {
+  public OutlierResult run(Relation<V> relation) {
     final int dbsize = relation.size();
     ArrayList<ArrayList<DBIDs>> ranges = buildRanges(relation);
 
@@ -157,11 +155,6 @@ public class AggarwalYuEvolutionary<V extends NumberVector> extends AbstractAgga
     DoubleRelation scoreResult = new MaterializedDoubleRelation("AggarwalYuEvolutionary", relation.getDBIDs(), outlierScore);
     OutlierScoreMeta meta = new InvertedOutlierScoreMeta(minmax.getMin(), minmax.getMax(), Double.NEGATIVE_INFINITY, 0.0);
     return new OutlierResult(meta, scoreResult);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

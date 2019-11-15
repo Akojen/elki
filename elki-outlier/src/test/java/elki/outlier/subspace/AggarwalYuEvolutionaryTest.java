@@ -43,8 +43,8 @@ public class AggarwalYuEvolutionaryTest extends AbstractOutlierAlgorithmTest {
         .with(AggarwalYuEvolutionary.Par.PHI_ID, 8) //
         .with(AggarwalYuEvolutionary.Par.M_ID, 20) //
         .with(AggarwalYuEvolutionary.Par.SEED_ID, 0) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.653888888888);
-    testSingleScore(result, 945, 0.0);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.653888888888);
+    assertSingleScore(result, 945, 0.0);
   }
 }

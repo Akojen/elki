@@ -43,8 +43,8 @@ public class HiSCTest extends AbstractClusterAlgorithmTest {
         .with(OPTICSXi.Par.XI_ID, 0.5) //
         .with(HiSC.Par.ALPHA_ID, 0.05) //
         .with(HiSC.Par.K_ID, 15) //
-        .build().run(db);
-    testFMeasure(db, result, .78449);
-    testClusterSizes(result, new int[] { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 8, 11, 17, 27, 185, 233, 536 });
+        .build().autorun(db);
+    assertFMeasure(db, result, .78449);
+    assertClusterSizes(result, new int[] { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 5, 8, 11, 17, 27, 185, 233, 536 });
   }
 }

@@ -62,9 +62,9 @@ public class ERiCTest extends AbstractClusterAlgorithmTest {
         .with(WeightedCovarianceMatrixBuilder.Par.WEIGHT_ID, ErfcWeight.class) //
         .with(EigenPairFilter.PCA_EIGENPAIR_FILTER, RelativeEigenPairFilter.class) //
         .with(RelativeEigenPairFilter.Par.EIGENPAIR_FILTER_RALPHA, 1.60) //
-        .build().run(db);
-    testFMeasure(db, result, 0.728074); // Hierarchical pairs scored: 0.9204825
-    testClusterSizes(result, new int[] { 109, 188, 303 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.728074); // Hierarchical pairs scored: 0.9204825
+    assertClusterSizes(result, new int[] { 109, 188, 303 });
   }
 
   @Test
@@ -82,9 +82,9 @@ public class ERiCTest extends AbstractClusterAlgorithmTest {
         .with(WeightedCovarianceMatrixBuilder.Par.WEIGHT_ID, ErfcWeight.class) //
         .with(EigenPairFilter.PCA_EIGENPAIR_FILTER, PercentageEigenPairFilter.class) //
         .with(PercentageEigenPairFilter.Par.ALPHA_ID, 0.6) //
-        .build().run(db);
-    testFMeasure(db, result, 0.831136946);
-    testClusterSizes(result, new int[] { 29, 189, 207, 225 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.831136946);
+    assertClusterSizes(result, new int[] { 29, 189, 207, 225 });
   }
 
   @Test
@@ -101,8 +101,8 @@ public class ERiCTest extends AbstractClusterAlgorithmTest {
         .with(PCARunner.Par.PCA_COVARIANCE_MATRIX, WeightedCovarianceMatrixBuilder.class) //
         .with(WeightedCovarianceMatrixBuilder.Par.WEIGHT_ID, ErfcWeight.class) //
         .with(EigenPairFilter.PCA_EIGENPAIR_FILTER, ProgressiveEigenPairFilter.class) //
-        .build().run(db);
-    testFMeasure(db, result, 0.732609);
-    testClusterSizes(result, new int[] { 104, 188, 211, 597 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.732609);
+    assertClusterSizes(result, new int[] { 104, 188, 211, 597 });
   }
 }

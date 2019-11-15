@@ -29,8 +29,8 @@ import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.ids.*;
 import elki.database.query.distance.DistanceQuery;
-import elki.database.query.knn.KNNQuery;
-import elki.database.query.range.RangeQuery;
+import elki.database.query.knn.KNNSearcher;
+import elki.database.query.range.RangeSearcher;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
 import elki.distance.Distance;
@@ -40,6 +40,7 @@ import elki.index.IndexFactory;
 import elki.index.KNNIndex;
 import elki.index.RangeIndex;
 import elki.logging.Logging;
+import elki.logging.statistics.LongStatistic;
 import elki.persistent.AbstractPageFileFactory;
 import elki.utilities.datastructures.heap.DoubleMaxHeap;
 import elki.utilities.documentation.Reference;
@@ -60,6 +61,8 @@ import net.jafama.FastMath;
  * R. Weber, S. Blott<br>
  * An approximation based data structure for similarity search<br>
  * Report TR1997b, ETH Zentrum, Zurich, Switzerland
+ * <p>
+ * TODO: this needs to be optimized &amp; more low-level.
  * 
  * @author Thomas Bernecker
  * @author Erich Schubert
@@ -130,8 +133,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
   public void initialize() {
     setPartitions(relation);
     for(DBIDIter iter = relation.iterDBIDs(); iter.valid(); iter.advance()) {
-      DBID id = DBIDUtil.deref(iter);
-      vectorApprox.add(calculateApproximation(id, relation.get(id)));
+      vectorApprox.add(calculateApproximation(iter, relation.get(iter)));
     }
   }
 
@@ -175,7 +177,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
    * @param dv Data vector
    * @return Vector approximation
    */
-  public VectorApproximation calculateApproximation(DBID id, V dv) {
+  public VectorApproximation calculateApproximation(DBIDRef id, V dv) {
     int[] approximation = new int[dv.getDimensionality()];
     for(int d = 0; d < splitPositions.length; d++) {
       final double val = dv.doubleValue(d);
@@ -197,8 +199,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
       else {
         // Search grid position
         int pos = Arrays.binarySearch(splitPositions[d], val);
-        pos = (pos >= 0) ? pos : ((-pos) - 2);
-        approximation[d] = pos;
+        approximation[d] = (pos >= 0) ? pos : ((-pos) - 2);
       }
     }
     return new VectorApproximation(id, approximation);
@@ -223,8 +224,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
   @Override
   public void logStatistics() {
     super.logStatistics();
-    // FIXME:
-    LOG.statistics("scanned pages:" + getScannedPages());
+    LOG.statistics(new LongStatistic(getClass() + ".scannedpages", getScannedPages()));
   }
 
   @Override
@@ -238,13 +238,13 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
   }
 
   @Override
-  public KNNQuery<V> getKNNQuery(DistanceQuery<V> distanceQuery, int maxk, int flags) {
+  public KNNSearcher<V> kNNByObject(DistanceQuery<V> distanceQuery, int maxk, int flags) {
     Distance<? super V> df = distanceQuery.getDistance();
     return df instanceof LPNormDistance ? new VAFileKNNQuery(distanceQuery, ((LPNormDistance) df).getP()) : null;
   }
 
   @Override
-  public RangeQuery<V> getRangeQuery(DistanceQuery<V> distanceQuery, double maxradius, int flags) {
+  public RangeSearcher<V> rangeByObject(DistanceQuery<V> distanceQuery, double maxradius, int flags) {
     Distance<? super V> df = distanceQuery.getDistance();
     return df instanceof LPNormDistance ? new VAFileRangeQuery(distanceQuery, ((LPNormDistance) df).getP()) : null;
   }
@@ -254,7 +254,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
    * 
    * @author Erich Schubert
    */
-  public class VAFileRangeQuery extends AbstractRefiningIndex<V>.AbstractRefiningQuery implements RangeQuery<V> {
+  public class VAFileRangeQuery extends AbstractRefiningIndex<V>.AbstractRefiningQuery implements RangeSearcher<V> {
     /**
      * LP Norm p parameter.
      */
@@ -273,12 +273,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
     }
 
     @Override
-    public ModifiableDoubleDBIDList getRangeForDBID(DBIDRef id, double range, ModifiableDoubleDBIDList result) {
-      return getRangeForObject(relation.get(id), range, result);
-    }
-
-    @Override
-    public ModifiableDoubleDBIDList getRangeForObject(V query, double eps, ModifiableDoubleDBIDList result) {
+    public ModifiableDoubleDBIDList getRange(V query, double eps, ModifiableDoubleDBIDList result) {
       // generate query approximation and lookup table
       VectorApproximation queryApprox = calculateApproximation(null, query);
 
@@ -291,9 +286,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
       // Approximation step
       for(int i = 0; i < vectorApprox.size(); i++) {
         VectorApproximation va = vectorApprox.get(i);
-        double minDist = vadist.getMinDist(va);
-
-        if(minDist > eps) {
+        if(vadist.getMinDist(va) > eps) {
           continue;
         }
 
@@ -301,9 +294,9 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
         // interested in the DBID only! But this needs an API change.
 
         // refine the next element
-        final double dist = refine(va.id, query);
+        final double dist = refine(va, query);
         if(dist <= eps) {
-          result.add(dist, va.id);
+          result.add(dist, va);
         }
       }
       return result;
@@ -315,7 +308,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
    * 
    * @author Erich Schubert
    */
-  public class VAFileKNNQuery extends AbstractRefiningIndex<V>.AbstractRefiningQuery implements KNNQuery<V> {
+  public class VAFileKNNQuery extends AbstractRefiningIndex<V>.AbstractRefiningQuery implements KNNSearcher<V> {
     /**
      * LP Norm p parameter.
      */
@@ -333,12 +326,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
     }
 
     @Override
-    public KNNList getKNNForDBID(DBIDRef id, int k) {
-      return getKNNForObject(relation.get(id), k);
-    }
-
-    @Override
-    public KNNList getKNNForObject(V query, int k) {
+    public KNNList getKNN(V query, int k) {
       // generate query approximation and lookup table
       VectorApproximation queryApprox = calculateApproximation(null, query);
 
@@ -358,19 +346,15 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
       for(int i = 0; i < vectorApprox.size(); i++) {
         VectorApproximation va = vectorApprox.get(i);
         double minDist = vadist.getMinDist(va);
-        double maxDist = vadist.getMaxDist(va);
-
         // Skip excess candidate generation:
         if(minDist > minMaxDist) {
           continue;
         }
-        candidates.add(minDist, va.id);
+        candidates.add(minDist, va);
 
         // Update candidate pruning heap
-        minMaxHeap.add(maxDist, k);
-        if(minMaxHeap.size() >= k) {
-          minMaxDist = minMaxHeap.peek();
-        }
+        minMaxHeap.add(vadist.getMaxDist(va), k);
+        minMaxDist = minMaxHeap.size() >= k ? minMaxHeap.peek() : Double.POSITIVE_INFINITY;
       }
       // sort candidates by lower bound (minDist)
       candidates.sort();
@@ -378,7 +362,6 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
       // refinement step
       KNNHeap result = DBIDUtil.newHeap(k);
 
-      // log.fine("candidates size " + candidates.size());
       // retrieve accurate distances
       for(DoubleDBIDListIter iter = candidates.iter(); iter.valid(); iter.advance()) {
         // Stop when we are sure to have all elements
@@ -413,15 +396,6 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
    * @param <V> Vector type
    */
   public static class Factory<V extends NumberVector> implements IndexFactory<V> {
-    /**
-     * Number of partitions to use in each dimension.
-     * 
-     * <pre>
-     * -vafile.partitions 8
-     * </pre>
-     */
-    public static final OptionID PARTITIONS_ID = new OptionID("vafile.partitions", "Number of partitions to use in each dimension.");
-
     /**
      * Page size.
      */
@@ -461,6 +435,11 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
      */
     public static class Par implements Parameterizer {
       /**
+       * Number of partitions to use in each dimension.
+       */
+      public static final OptionID PARTITIONS_ID = new OptionID("vafile.partitions", "Number of partitions to use in each dimension.");
+
+      /**
        * Page size.
        */
       int pagesize = 1;
@@ -475,7 +454,7 @@ public class VAFile<V extends NumberVector> extends AbstractRefiningIndex<V> imp
         new IntParameter(AbstractPageFileFactory.Par.PAGE_SIZE_ID, 1024) //
             .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
             .grab(config, x -> pagesize = x);
-        new IntParameter(Factory.PARTITIONS_ID) //
+        new IntParameter(PARTITIONS_ID) //
             .addConstraint(CommonConstraints.GREATER_THAN_ONE_INT) //
             .grab(config, x -> numpart = x);
       }

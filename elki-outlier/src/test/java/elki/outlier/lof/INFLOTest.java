@@ -39,9 +39,9 @@ public class INFLOTest extends AbstractOutlierAlgorithmTest {
   public void testINFLO() {
     Database db = makeSimpleDatabase(UNITTEST + "outlier-3d-3clusters.ascii", 960);
     OutlierResult result = new ELKIBuilder<INFLO<DoubleVector>>(INFLO.class) //
-        .with(INFLO.Par.K_ID, 30).build().run(db);
-    testAUC(db, "Noise", result, 0.9606111);
-    testSingleScore(result, 945, 1.3285178);
+        .with(INFLO.Par.K_ID, 30).build().autorun(db);
+    assertAUC(db, "Noise", result, 0.9606111);
+    assertSingleScore(result, 945, 1.3285178);
   }
 
   @Test
@@ -49,14 +49,14 @@ public class INFLOTest extends AbstractOutlierAlgorithmTest {
     Database db = makeSimpleDatabase(UNITTEST + "outlier-3d-3clusters.ascii", 960);
     OutlierResult result = new ELKIBuilder<INFLO<DoubleVector>>(INFLO.class) //
         .with(INFLO.Par.M_ID, 0.5) //
-        .with(INFLO.Par.K_ID, 30).build().run(db);
-    testAUC(db, "Noise", result, 0.94130555);
-    testSingleScore(result, 945, 1.3285178); // Not pruned.
+        .with(INFLO.Par.K_ID, 30).build().autorun(db);
+    assertAUC(db, "Noise", result, 0.94130555);
+    assertSingleScore(result, 945, 1.3285178); // Not pruned.
 
     result = new ELKIBuilder<INFLO<DoubleVector>>(INFLO.class) //
         .with(INFLO.Par.M_ID, 0.2) //
-        .with(INFLO.Par.K_ID, 30).build().run(db);
-    testAUC(db, "Noise", result, 0.8198611111);
-    testSingleScore(result, 945, 1.0); // Pruned.
+        .with(INFLO.Par.K_ID, 30).build().autorun(db);
+    assertAUC(db, "Noise", result, 0.8198611111);
+    assertSingleScore(result, 945, 1.0); // Pruned.
   }
 }

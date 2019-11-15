@@ -22,7 +22,7 @@ package elki.timeseries;
 
 import java.util.Random;
 
-import elki.AbstractAlgorithm;
+import elki.Algorithm;
 import elki.data.DoubleVector;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
@@ -30,14 +30,13 @@ import elki.database.ids.ArrayDBIDs;
 import elki.database.ids.DBIDArrayIter;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
-import elki.logging.Logging;
 import elki.result.Metadata;
 import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.exceptions.AbortException;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
@@ -92,12 +91,7 @@ import elki.utilities.random.RandomFactory;
     booktitle = "Detection of Abrupt Changes - Theory and Application", //
     url = "http://people.irisa.fr/Michele.Basseville/kniga/kniga.pdf", //
     bibkey = "books/prentice/BassevilleN93/C2")
-public class OfflineChangePointDetectionAlgorithm extends AbstractAlgorithm<ChangePoints> {
-  /**
-   * Class logger
-   */
-  private static final Logging LOG = Logging.getLogger(OfflineChangePointDetectionAlgorithm.class);
-
+public class OfflineChangePointDetectionAlgorithm implements Algorithm {
   /**
    * Number of samples for bootstrap significance.
    */
@@ -123,6 +117,11 @@ public class OfflineChangePointDetectionAlgorithm extends AbstractAlgorithm<Chan
     this.minConfidence = confidence;
     this.bootstrapSamples = bootstrapSteps;
     this.rnd = rnd;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_VARIABLE_LENGTH);
   }
 
   /**
@@ -336,16 +335,6 @@ public class OfflineChangePointDetectionAlgorithm extends AbstractAlgorithm<Chan
       bstrap[r] = bstrap[i];
       bstrap[i] = tmp;
     }
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_VARIABLE_LENGTH);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

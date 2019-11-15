@@ -20,29 +20,22 @@
  */
 package elki.algorithm;
 
-import elki.AbstractAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.Database;
-import elki.logging.Logging;
 import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Title;
 
 /**
- * Null Algorithm, which does nothing. Can be used to e.g. just visualize a data
- * set.
+ * Null algorithm, which does nothing. Can be used to e.g. visualize a data set.
  * 
  * @author Erich Schubert
  * @since 0.2
  */
 @Title("Null Algorithm")
 @Description("Algorithm which does nothing, just return a null object.")
-public class NullAlgorithm extends AbstractAlgorithm<Void> {
-  /**
-   * The logger for this class.
-   */
-  private static final Logging LOG = Logging.getLogger(NullAlgorithm.class);
-  
+public class NullAlgorithm implements Algorithm {
   /**
    * Constructor.
    */
@@ -51,13 +44,8 @@ public class NullAlgorithm extends AbstractAlgorithm<Void> {
   }
 
   @Override
-  public Void run(Database database) {
+  public Void autorun(Database database) {
     return null;
-  }
-  
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   @Override

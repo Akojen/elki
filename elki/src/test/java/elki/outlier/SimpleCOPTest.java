@@ -40,8 +40,8 @@ public class SimpleCOPTest extends AbstractOutlierAlgorithmTest {
   public void testSimpleCOP() {
     Database db = makeSimpleDatabase(UNITTEST + "outlier-parabolic.ascii", 530);
     OutlierResult result = new ELKIBuilder<SimpleCOP<DoubleVector>>(SimpleCOP.class) //
-        .with(SimpleCOP.Par.K_ID, 55).build().run(db);
-    testAUC(db, "Noise", result, 0.8461333);
-    testSingleScore(result, 416, 0.28814843615);
+        .with(SimpleCOP.Par.K_ID, 55).build().autorun(db);
+    assertAUC(db, "Noise", result, 0.8461333);
+    assertSingleScore(result, 416, 0.28814843615);
   }
 }

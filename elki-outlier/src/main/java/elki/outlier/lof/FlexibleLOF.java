@@ -20,8 +20,7 @@
  */
 package elki.outlier.lof;
 
-import elki.AbstractAlgorithm;
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.CombinedTypeInformation;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
@@ -32,13 +31,14 @@ import elki.database.datastore.WritableDoubleDataStore;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
 import elki.database.query.distance.DistanceQuery;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.query.knn.PreprocessorKNNQuery;
-import elki.database.query.rknn.RKNNQuery;
+import elki.database.query.rknn.RKNNSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.logging.progress.StepProgress;
@@ -53,6 +53,7 @@ import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.exceptions.AbortException;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
@@ -86,7 +87,7 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
  * @since 0.2
  *
  * @navhas - computes - LOFResult
- * @has - - - KNNQuery
+ * @has - - - KNNSearcher
  *
  * @param <O> the type of objects handled by this algorithm
  */
@@ -97,7 +98,7 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
     booktitle = "Proc. 2nd ACM SIGMOD Int. Conf. on Management of Data (SIGMOD'00)", //
     url = "https://doi.org/10.1145/342009.335388", //
     bibkey = "DBLP:conf/sigmod/BreunigKNS00")
-public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements OutlierAlgorithm {
+public class FlexibleLOF<O> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
@@ -139,6 +140,12 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
     this.reachabilityDistance = reachabilityDistance;
   }
 
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(reachabilityDistance.equals(referenceDistance) ? reachabilityDistance.getInputTypeRestriction() : //
+        new CombinedTypeInformation(reachabilityDistance.getInputTypeRestriction(), referenceDistance.getInputTypeRestriction()));
+  }
+
   /**
    * Performs the Generalized LOF algorithm on the given database by calling
    * {@link #doRunInTime}.
@@ -150,7 +157,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
     StepProgress stepprog = LOG.isVerbose() ? new StepProgress("LOF", 3) : null;
     DistanceQuery<O> distQ = new QueryBuilder<>(relation, reachabilityDistance).distanceQuery();
     // "HEAVY" flag for knnReach since it is used more than once
-    KNNQuery<O> knnReach = new QueryBuilder<>(distQ).optimizedOnly().kNNQuery(kreach);
+    KNNSearcher<DBIDRef> knnReach = new QueryBuilder<>(distQ).optimizedOnly().kNNByDBID(kreach);
     // No optimized kNN query - use a preprocessor!
     if(!(knnReach instanceof PreprocessorKNNQuery)) {
       if(stepprog != null) {
@@ -158,15 +165,15 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
             "Materializing neighborhoods w.r.t. reference neighborhood distance." //
             : "Not materializing neighborhoods w.r.t. reference neighborhood distance, but materializing neighborhoods w.r.t. reachability distance function.", LOG);
       }
-      knnReach = new QueryBuilder<>(relation, reachabilityDistance).precomputed().kNNQuery(//
+      knnReach = new QueryBuilder<>(relation, reachabilityDistance).precomputed().kNNByDBID(//
           (referenceDistance.equals(reachabilityDistance)) ? Math.max(kreach, krefer) : kreach);
     }
 
     // knnReach is only used once
-    KNNQuery<O> knnRefer = knnReach;
+    KNNSearcher<DBIDRef> knnRefer = knnReach;
     if(!referenceDistance.equals(reachabilityDistance)) {
       // do not materialize the first neighborhood, since it is used only once
-      knnRefer = new QueryBuilder<>(relation, referenceDistance).kNNQuery(krefer);
+      knnRefer = new QueryBuilder<>(relation, referenceDistance).kNNByDBID(krefer);
     }
     return doRunInTime(relation.getDBIDs(), knnRefer, knnReach, stepprog).getResult();
   }
@@ -183,7 +190,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
    * @param stepprog Progress logger
    * @return LOF result
    */
-  protected LOFResult<O> doRunInTime(DBIDs ids, KNNQuery<O> kNNRefer, KNNQuery<O> kNNReach, StepProgress stepprog) {
+  protected LOFResult<O> doRunInTime(DBIDs ids, KNNSearcher<DBIDRef> kNNRefer, KNNSearcher<DBIDRef> kNNReach, StepProgress stepprog) {
     // Assert we got something
     if(kNNRefer == null) {
       throw new AbortException("No kNN queries supported by database for reference neighborhood distance function.");
@@ -221,17 +228,17 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
    * @param ids the ids of the objects
    * @param lrds Reachability storage
    */
-  protected void computeLRDs(KNNQuery<O> knnq, DBIDs ids, WritableDoubleDataStore lrds) {
+  protected void computeLRDs(KNNSearcher<DBIDRef> knnq, DBIDs ids, WritableDoubleDataStore lrds) {
     FiniteProgress lrdsProgress = LOG.isVerbose() ? new FiniteProgress("LRD", ids.size(), LOG) : null;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
-      final KNNList neighbors = knnq.getKNNForDBID(iter, kreach);
+      final KNNList neighbors = knnq.getKNN(iter, kreach);
       double sum = 0.0;
       int count = 0;
       for(DoubleDBIDListIter neighbor = neighbors.iter(); neighbor.valid(); neighbor.advance()) {
         if(DBIDUtil.equal(neighbor, iter)) {
           continue;
         }
-        KNNList neighborsNeighbors = knnq.getKNNForDBID(neighbor, kreach);
+        KNNList neighborsNeighbors = knnq.getKNN(neighbor, kreach);
         sum += MathUtil.max(neighbor.doubleValue(), neighborsNeighbors.getKNNDistance());
         count++;
       }
@@ -253,11 +260,11 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
    * @param lofs Local outlier factor storage
    * @param lofminmax Score minimum/maximum tracker
    */
-  protected void computeLOFs(KNNQuery<O> knnq, DBIDs ids, DoubleDataStore lrds, WritableDoubleDataStore lofs, DoubleMinMax lofminmax) {
+  protected void computeLOFs(KNNSearcher<DBIDRef> knnq, DBIDs ids, DoubleDataStore lrds, WritableDoubleDataStore lofs, DoubleMinMax lofminmax) {
     FiniteProgress progressLOFs = LOG.isVerbose() ? new FiniteProgress("LOF_SCORE for objects", ids.size(), LOG) : null;
     for(DBIDIter iter = ids.iter(); iter.valid(); iter.advance()) {
       final double lof, lrdp = lrds.doubleValue(iter);
-      final KNNList neighbors = knnq.getKNNForDBID(iter, krefer);
+      final KNNList neighbors = knnq.getKNN(iter, krefer);
       if(!Double.isInfinite(lrdp)) {
         double sum = 0.;
         int count = 0;
@@ -287,23 +294,6 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
     LOG.ensureCompleted(progressLOFs);
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    final TypeInformation type;
-    if(reachabilityDistance.equals(referenceDistance)) {
-      type = reachabilityDistance.getInputTypeRestriction();
-    }
-    else {
-      type = new CombinedTypeInformation(referenceDistance.getInputTypeRestriction(), reachabilityDistance.getInputTypeRestriction());
-    }
-    return TypeUtil.array(type);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Encapsulates information like the neighborhood, the LRD and LOF values of
    * the objects during a run of the {@link FlexibleLOF} algorithm.
@@ -319,22 +309,22 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
     /**
      * The kNN query w.r.t. the reference neighborhood distance.
      */
-    private final KNNQuery<O> kNNRefer;
+    private final KNNSearcher<DBIDRef> kNNRefer;
 
     /**
      * The kNN query w.r.t. the reachability distance.
      */
-    private final KNNQuery<O> kNNReach;
+    private final KNNSearcher<DBIDRef> kNNReach;
 
     /**
      * The RkNN query w.r.t. the reference neighborhood distance.
      */
-    private RKNNQuery<O> rkNNRefer;
+    private RKNNSearcher<DBIDRef> rkNNRefer;
 
     /**
      * The rkNN query w.r.t. the reachability distance.
      */
-    private RKNNQuery<O> rkNNReach;
+    private RKNNSearcher<DBIDRef> rkNNReach;
 
     /**
      * The LRD values of the objects.
@@ -356,7 +346,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
      * @param lrds the LRD values of the objects
      * @param lofs the LOF values of the objects
      */
-    public LOFResult(OutlierResult result, KNNQuery<O> kNNRefer, KNNQuery<O> kNNReach, WritableDoubleDataStore lrds, WritableDoubleDataStore lofs) {
+    public LOFResult(OutlierResult result, KNNSearcher<DBIDRef> kNNRefer, KNNSearcher<DBIDRef> kNNReach, WritableDoubleDataStore lrds, WritableDoubleDataStore lofs) {
       this.result = result;
       this.kNNRefer = kNNRefer;
       this.kNNReach = kNNReach;
@@ -369,7 +359,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
      *
      * @return the kNN query w.r.t. the reference neighborhood distance
      */
-    public KNNQuery<O> getKNNRefer() {
+    public KNNSearcher<DBIDRef> getKNNRefer() {
       return kNNRefer;
     }
 
@@ -378,7 +368,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
      *
      * @return the kNN query w.r.t. the reachability distance
      */
-    public KNNQuery<O> getKNNReach() {
+    public KNNSearcher<DBIDRef> getKNNReach() {
       return kNNReach;
     }
 
@@ -414,7 +404,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
      *
      * @param rkNNRefer the query to set
      */
-    public void setRkNNRefer(RKNNQuery<O> rkNNRefer) {
+    public void setRkNNRefer(RKNNSearcher<DBIDRef> rkNNRefer) {
       this.rkNNRefer = rkNNRefer;
     }
 
@@ -423,7 +413,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
      *
      * @return the RkNN query w.r.t. the reference neighborhood distance
      */
-    public RKNNQuery<O> getRkNNRefer() {
+    public RKNNSearcher<DBIDRef> getRkNNRefer() {
       return rkNNRefer;
     }
 
@@ -432,7 +422,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
      *
      * @return the RkNN query w.r.t. the reachability distance
      */
-    public RKNNQuery<O> getRkNNReach() {
+    public RKNNSearcher<DBIDRef> getRkNNReach() {
       return rkNNReach;
     }
 
@@ -441,7 +431,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
      *
      * @param rkNNReach the query to set
      */
-    public void setRkNNReach(RKNNQuery<O> rkNNReach) {
+    public void setRkNNReach(RKNNSearcher<DBIDRef> rkNNReach) {
       this.rkNNReach = rkNNReach;
     }
   }
@@ -451,7 +441,7 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
    *
    * @author Erich Schubert
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * The distance function to determine the reachability distance between
      * database objects.
@@ -482,9 +472,9 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
     protected int kreach = 2;
 
     /**
-     * Neighborhood distance function.
+     * The distance function to use.
      */
-    protected Distance<? super O> neighborhoodDistance = null;
+    protected Distance<? super O> distance;
 
     /**
      * Reachability distance function.
@@ -493,7 +483,6 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
       new IntParameter(KREF_ID) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> krefer = x);
@@ -502,6 +491,8 @@ public class FlexibleLOF<O> extends AbstractAlgorithm<OutlierResult> implements 
           .setOptional(true) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> kreach = x);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       reachabilityDistance = distance;
       new ObjectParameter<Distance<O>>(REACHABILITY_DISTANCE_FUNCTION_ID, Distance.class) //
           .setOptional(true) //

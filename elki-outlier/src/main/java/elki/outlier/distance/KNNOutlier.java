@@ -20,19 +20,21 @@
  */
 package elki.outlier.distance;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
 import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.WritableDoubleDataStore;
 import elki.database.ids.DBIDIter;
+import elki.database.ids.DBIDRef;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.math.DoubleMinMax;
@@ -46,9 +48,11 @@ import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 
 /**
  * Outlier Detection based on the distance of an object to its k nearest
@@ -71,7 +75,7 @@ import elki.utilities.optionhandling.parameters.IntParameter;
  * @author Lisa Reichert
  * @since 0.3
  *
- * @has - - - KNNQuery
+ * @has - - - KNNSearcher
  *
  * @param <O> the type of objects handled by this algorithm
  */
@@ -84,16 +88,21 @@ import elki.utilities.optionhandling.parameters.IntParameter;
     bibkey = "DBLP:conf/sigmod/RamaswamyRS00")
 @Alias({ "knno" })
 @Priority(Priority.RECOMMENDED)
-public class KNNOutlier<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class KNNOutlier<O> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(KNNOutlier.class);
 
   /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
+
+  /**
    * The parameter k (plus query point!)
    */
-  private int kplus;
+  protected int kplus;
 
   /**
    * Constructor for a single kNN query.
@@ -102,8 +111,14 @@ public class KNNOutlier<O> extends AbstractDistanceBasedAlgorithm<Distance<? sup
    * @param k Value of k (excluding query point!)
    */
   public KNNOutlier(Distance<? super O> distance, int k) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.kplus = k + 1; // INCLUDE the query point now
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -112,7 +127,7 @@ public class KNNOutlier<O> extends AbstractDistanceBasedAlgorithm<Distance<? sup
    * @param relation Data relation
    */
   public OutlierResult run(Relation<O> relation) {
-    KNNQuery<O> knnQuery = new QueryBuilder<>(relation, distance).kNNQuery(kplus);
+    KNNSearcher<DBIDRef> knnQuery = new QueryBuilder<>(relation, distance).kNNByDBID(kplus);
 
     FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("kNN distance for objects", relation.size(), LOG) : null;
     DoubleMinMax minmax = new DoubleMinMax();
@@ -121,7 +136,7 @@ public class KNNOutlier<O> extends AbstractDistanceBasedAlgorithm<Distance<? sup
     for(DBIDIter it = relation.iterDBIDs(); it.valid(); it.advance()) {
       // distance to the kth nearest neighbor
       // (assuming the query point is always included, with distance 0)
-      final double dkn = knnQuery.getKNNForDBID(it, kplus).getKNNDistance();
+      final double dkn = knnQuery.getKNN(it, kplus).getKNNDistance();
       knno_score.putDouble(it, dkn);
       minmax.put(dkn);
       LOG.incrementProcessed(prog);
@@ -132,27 +147,22 @@ public class KNNOutlier<O> extends AbstractDistanceBasedAlgorithm<Distance<? sup
     return new OutlierResult(meta, scoreres);
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
    * @author Erich Schubert
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Parameter to specify the k nearest neighbor
      */
     public static final OptionID K_ID = new OptionID("knno.k", //
         "The k nearest neighbor, excluding the query point (i.e. query point is the 0-nearest-neighbor)");
+
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
 
     /**
      * k parameter
@@ -161,7 +171,8 @@ public class KNNOutlier<O> extends AbstractDistanceBasedAlgorithm<Distance<? sup
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(K_ID)//
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> k = x);

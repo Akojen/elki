@@ -22,9 +22,6 @@ package elki.outlier.trivial;
 
 import java.util.regex.Pattern;
 
-import elki.outlier.OutlierAlgorithm;
-import elki.AbstractAlgorithm;
-import elki.data.ClassLabel;
 import elki.data.type.NoSupportedDataTypeException;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
@@ -36,13 +33,13 @@ import elki.database.ids.DBIDIter;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
-import elki.logging.Logging;
+import elki.outlier.OutlierAlgorithm;
 import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
 import elki.result.outlier.ProbabilisticOutlierScore;
 import elki.utilities.Priority;
-import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.PatternParameter;
 
@@ -54,12 +51,7 @@ import elki.utilities.optionhandling.parameters.PatternParameter;
  * @since 0.4.0
  */
 @Priority(Priority.SUPPLEMENTARY)
-public class ByLabelOutlier extends AbstractAlgorithm<OutlierResult> implements OutlierAlgorithm {
-  /**
-   * Our logger.
-   */
-  private static final Logging LOG = Logging.getLogger(ByLabelOutlier.class);
-
+public class ByLabelOutlier implements OutlierAlgorithm {
   /**
    * The default pattern to use.
    */
@@ -93,11 +85,10 @@ public class ByLabelOutlier extends AbstractAlgorithm<OutlierResult> implements 
   }
 
   @Override
-  public OutlierResult run(Database database) {
+  public OutlierResult autorun(Database database) {
     // Prefer a true class label
     try {
-      Relation<ClassLabel> relation = database.getRelation(TypeUtil.CLASSLABEL);
-      return run(relation);
+      return run(database.getRelation(TypeUtil.CLASSLABEL));
     }
     catch(NoSupportedDataTypeException e) {
       // Otherwise, try any labellike.
@@ -121,11 +112,6 @@ public class ByLabelOutlier extends AbstractAlgorithm<OutlierResult> implements 
     DoubleRelation scoreres = new MaterializedDoubleRelation("By label outlier scores", relation.getDBIDs(), scores);
     OutlierScoreMeta meta = new ProbabilisticOutlierScore();
     return new OutlierResult(meta, scoreres);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

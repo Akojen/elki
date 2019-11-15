@@ -22,17 +22,18 @@ package elki.algorithm;
 
 import java.util.Arrays;
 
-import elki.AbstractDistanceBasedAlgorithm;
-import elki.algorithm.KNNDistancesSampler.KNNDistanceOrderResult;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.ids.DBIDIter;
+import elki.database.ids.DBIDRef;
 import elki.database.ids.DBIDUtil;
 import elki.database.ids.DBIDs;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.math.geometry.XYCurve;
@@ -41,10 +42,12 @@ import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 import elki.utilities.optionhandling.parameters.RandomParameter;
 import elki.utilities.random.RandomFactory;
 
@@ -88,11 +91,16 @@ import elki.utilities.random.RandomFactory;
     booktitle = "ACM Trans. Database Systems (TODS)", //
     url = "https://doi.org/10.1145/3068335", //
     bibkey = "DBLP:journals/tods/SchubertSEKX17")
-public class KNNDistancesSampler<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, KNNDistanceOrderResult> {
+public class KNNDistancesSampler<O> implements Algorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(KNNDistancesSampler.class);
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * Parameter k.
@@ -107,7 +115,7 @@ public class KNNDistancesSampler<O> extends AbstractDistanceBasedAlgorithm<Dista
   /**
    * Random number seeding.
    */
-  private RandomFactory rnd;
+  protected RandomFactory rnd;
 
   /**
    * Constructor.
@@ -118,7 +126,8 @@ public class KNNDistancesSampler<O> extends AbstractDistanceBasedAlgorithm<Dista
    * @param rnd Random source.
    */
   public KNNDistancesSampler(Distance<? super O> distance, int k, double sample, RandomFactory rnd) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.k = k;
     this.sample = sample;
     this.rnd = rnd;
@@ -132,7 +141,7 @@ public class KNNDistancesSampler<O> extends AbstractDistanceBasedAlgorithm<Dista
    * @return Result
    */
   public KNNDistanceOrderResult run(Relation<O> relation) {
-    KNNQuery<O> knnQuery = new QueryBuilder<>(relation, distance).kNNQuery(k + 1);
+    KNNSearcher<DBIDRef> knnQuery = new QueryBuilder<>(relation, distance).kNNByDBID(k + 1);
     final int size = (int) ((sample <= 1.) ? Math.ceil(relation.size() * sample) : sample);
     DBIDs sample = DBIDUtil.randomSample(relation.getDBIDs(), size, rnd);
 
@@ -140,7 +149,7 @@ public class KNNDistancesSampler<O> extends AbstractDistanceBasedAlgorithm<Dista
     double[] knnDistances = new double[size];
     int i = 0;
     for(DBIDIter iditer = sample.iter(); iditer.valid(); iditer.advance()) {
-      knnDistances[i++] = knnQuery.getKNNForDBID(iditer, k + 1).getKNNDistance();
+      knnDistances[i++] = knnQuery.getKNN(iditer, k + 1).getKNNDistance();
       LOG.incrementProcessed(prog);
     }
     LOG.ensureCompleted(prog);
@@ -149,12 +158,7 @@ public class KNNDistancesSampler<O> extends AbstractDistanceBasedAlgorithm<Dista
 
   @Override
   public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -184,7 +188,7 @@ public class KNNDistancesSampler<O> extends AbstractDistanceBasedAlgorithm<Dista
    *
    * @author Erich Schubert
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Parameter to specify the distance of the k-distant object to be assessed,
      * must be an integer greater than 0.
@@ -204,6 +208,11 @@ public class KNNDistancesSampler<O> extends AbstractDistanceBasedAlgorithm<Dista
     public static final OptionID SEED_ID = new OptionID("knndistanceorder.seed", "Random generator seed for sampling.");
 
     /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
+
+    /**
      * Parameter k.
      */
     protected int k;
@@ -216,11 +225,12 @@ public class KNNDistancesSampler<O> extends AbstractDistanceBasedAlgorithm<Dista
     /**
      * Random number seeding.
      */
-    private RandomFactory rnd;
+    protected RandomFactory rnd;
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(K_ID) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> k = x);

@@ -49,9 +49,9 @@ public class ParallelGeneralizedDBSCANTest extends AbstractClusterAlgorithmTest 
     Clustering<Model> result = new ELKIBuilder<>(ParallelGeneralizedDBSCAN.class) //
         .with(DBSCAN.Par.EPSILON_ID, 0.04) //
         .with(DBSCAN.Par.MINPTS_ID, 20) //
-        .build().run(db);
-    testFMeasure(db, result, 0.996413);
-    testClusterSizes(result, new int[] { 29, 50, 101, 150 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.996413);
+    assertClusterSizes(result, new int[] { 29, 50, 101, 150 });
   }
 
   /**
@@ -64,8 +64,8 @@ public class ParallelGeneralizedDBSCANTest extends AbstractClusterAlgorithmTest 
     Clustering<Model> result = new ELKIBuilder<>(ParallelGeneralizedDBSCAN.class) //
         .with(DBSCAN.Par.EPSILON_ID, 11.5) //
         .with(DBSCAN.Par.MINPTS_ID, 120) //
-        .build().run(db);
-    testFMeasure(db, result, 0.954382);
-    testClusterSizes(result, new int[] { 11, 200, 203, 224 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.954382);
+    assertClusterSizes(result, new int[] { 11, 200, 203, 224 });
   }
 }

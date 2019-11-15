@@ -25,16 +25,16 @@ import static elki.math.linearalgebra.VMath.*;
 import java.util.Arrays;
 import java.util.Comparator;
 
+import elki.clustering.optics.ClusterOrder;
 import elki.clustering.optics.CorrelationClusterOrder;
 import elki.clustering.optics.GeneralizedOPTICS;
 import elki.data.NumberVector;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
-import elki.database.Database;
 import elki.database.datastore.*;
 import elki.database.ids.*;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
 import elki.distance.minkowski.EuclideanDistance;
@@ -147,11 +147,21 @@ public class HiCO<V extends NumberVector> extends GeneralizedOPTICS<V, Correlati
   }
 
   @Override
-  public CorrelationClusterOrder run(Database db, Relation<V> relation) {
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(TypeUtil.NUMBER_VECTOR_FIELD);
+  }
+
+  /**
+   * Run the HiCO algorithm.
+   *
+   * @param relation Data relation
+   * @return OPTICS cluster order
+   */
+  public ClusterOrder run(Relation<V> relation) {
     if(mu >= relation.size()) {
       throw new AbortException("Parameter mu is chosen unreasonably large. This won't yield meaningful results.");
     }
-    return new Instance(db, relation).run();
+    return new Instance(relation).run();
   }
 
   /**
@@ -211,11 +221,10 @@ public class HiCO<V extends NumberVector> extends GeneralizedOPTICS<V, Correlati
     /**
      * Constructor.
      *
-     * @param db Database
      * @param relation Relation
      */
-    public Instance(Database db, Relation<V> relation) {
-      super(db, relation);
+    public Instance(Relation<V> relation) {
+      super(relation.getDBIDs());
       DBIDs ids = relation.getDBIDs();
       this.clusterOrder = DBIDUtil.newArray(ids.size());
       this.relation = relation;
@@ -233,13 +242,13 @@ public class HiCO<V extends NumberVector> extends GeneralizedOPTICS<V, Correlati
         LOG.warning("PCA results with k < dim are meaningless. Choose k much larger than the dimensionality.");
       }
       localPCAs = DataStoreUtil.makeStorage(relation.getDBIDs(), DataStoreFactory.HINT_HOT | DataStoreFactory.HINT_TEMP, PCAFilteredResult.class);
-      KNNQuery<V> knnQuery = new QueryBuilder<>(relation, EuclideanDistance.STATIC).kNNQuery(k);
+      KNNSearcher<DBIDRef> knnQuery = new QueryBuilder<>(relation, EuclideanDistance.STATIC).kNNByDBID(k);
 
       Duration dur = new MillisTimeDuration(this.getClass() + ".preprocessing-time").begin();
       FiniteProgress progress = LOG.isVerbose() ? new FiniteProgress("Performing local PCA", relation.size(), LOG) : null;
 
       for(DBIDIter iditer = relation.iterDBIDs(); iditer.valid(); iditer.advance()) {
-        PCAResult epairs = pca.processIds(knnQuery.getKNNForDBID(iditer, k), relation);
+        PCAResult epairs = pca.processIds(knnQuery.getKNN(iditer, k), relation);
         int numstrong = filter.filter(epairs.getEigenvalues());
         localPCAs.put(iditer, new PCAFilteredResult(epairs.getEigenPairs(), numstrong, 1., 0.));
         LOG.incrementProcessed(progress);
@@ -408,16 +417,6 @@ public class HiCO<V extends NumberVector> extends GeneralizedOPTICS<V, Correlati
   @Override
   public int getMinPts() {
     return mu;
-  }
-
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(NumberVector.FIELD);
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
   }
 
   /**

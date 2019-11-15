@@ -44,9 +44,9 @@ public class SingleAssignmentKMeansTest extends AbstractClusterAlgorithmTest {
     Clustering<?> result = new ELKIBuilder<SingleAssignmentKMeans<DoubleVector>>(SingleAssignmentKMeans.class) //
         .with(KMeans.K_ID, 5) //
         .with(KMeans.SEED_ID, 7) //
-        .build().run(db);
+        .build().autorun(db);
     // Unsurprisingly, these results are much worse than normal k-means
-    testFMeasure(db, result, 0.702733122);
-    testClusterSizes(result, new int[] { 64, 95, 202, 306, 333 });
+    assertFMeasure(db, result, 0.702733122);
+    assertClusterSizes(result, new int[] { 64, 95, 202, 306, 333 });
   }
 }

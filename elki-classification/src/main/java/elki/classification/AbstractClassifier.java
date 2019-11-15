@@ -24,7 +24,6 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
-import elki.AbstractAlgorithm;
 import elki.data.ClassLabel;
 import elki.database.Database;
 import elki.utilities.exceptions.AbortException;
@@ -38,11 +37,11 @@ import elki.utilities.exceptions.AbortException;
  * @param <O> Input type
  * @param <R> Result type
  */
-public abstract class AbstractClassifier<O, R> extends AbstractAlgorithm<R> implements Classifier<O> {
+public abstract class AbstractClassifier<O, R> implements Classifier<O> {
   @Override
   @Deprecated
-  public R run(Database database) {
-    throw new AbortException("Classifiers cannot auto-run on a database, but need to be trained and can then predict.");
+  public R autorun(Database database) {
+    throw new AbortException("Classifiers cannot autorun on a database, but need to be trained and can then predict.");
   }
 
   /**
@@ -63,9 +62,7 @@ public abstract class AbstractClassifier<O, R> extends AbstractAlgorithm<R> impl
     for(int i = 0; i2.hasNext();) {
       ClassLabel l = i2.next();
       int idx = l1.indexOf(l);
-      if(idx < 0 && getLogger().isDebuggingFiner()) {
-        getLogger().debugFiner("Label not found: " + l);
-      }
+      assert idx >= 0 : "Label not found: " + l;
       d2[i] = (idx >= 0) ? d1[idx] : 0.; // Default to 0 for unknown labels!
     }
     return d2;

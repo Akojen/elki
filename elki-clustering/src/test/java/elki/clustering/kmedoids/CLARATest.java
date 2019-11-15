@@ -50,8 +50,8 @@ public class CLARATest extends AbstractClusterAlgorithmTest {
         .with(CLARA.Par.RANDOM_ID, 1) //
         .with(CLARA.Par.NUMSAMPLES_ID, 2) //
         .with(CLARA.Par.SAMPLESIZE_ID, 50) //
-        .build().run(db);
-    testFMeasure(db, result, 0.998005);
-    testClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.998005);
+    assertClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
   }
 }

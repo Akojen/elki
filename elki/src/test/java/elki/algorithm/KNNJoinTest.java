@@ -22,24 +22,22 @@ package elki.algorithm;
 
 import org.junit.Test;
 
-import elki.data.DoubleVector;
 import elki.data.NumberVector;
 import elki.data.type.TypeUtil;
 import elki.database.Database;
 import elki.database.StaticArrayDatabase;
 import elki.database.ids.DBIDIter;
+import elki.database.ids.DBIDRef;
 import elki.database.ids.KNNList;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.Relation;
 import elki.distance.minkowski.EuclideanDistance;
 import elki.distance.minkowski.ManhattanDistance;
-import elki.index.tree.spatial.SpatialEntry;
 import elki.index.tree.spatial.rstarvariants.deliclu.DeLiCluTree;
 import elki.index.tree.spatial.rstarvariants.deliclu.DeLiCluTreeFactory;
 import elki.index.tree.spatial.rstarvariants.rstar.RStarTree;
 import elki.index.tree.spatial.rstarvariants.rstar.RStarTreeFactory;
-import elki.index.tree.spatial.rstarvariants.rstar.RStarTreeNode;
 import elki.math.MeanVariance;
 import elki.persistent.AbstractPageFileFactory;
 import elki.utilities.optionhandling.parameterization.ListParameterization;
@@ -76,22 +74,22 @@ public class KNNJoinTest {
 
     // Euclidean
     {
-      KNNQuery<NumberVector> knnq = new QueryBuilder<>(relation, EuclideanDistance.STATIC).linearOnly().kNNQuery();
+      KNNSearcher<DBIDRef> knnq = new QueryBuilder<>(relation, EuclideanDistance.STATIC).linearOnly().kNNByDBID();
 
       MeanVariance meansize = new MeanVariance();
       for(DBIDIter iditer = relation.iterDBIDs(); iditer.valid(); iditer.advance()) {
-        meansize.put(knnq.getKNNForDBID(iditer, 2).size());
+        meansize.put(knnq.getKNN(iditer, 2).size());
       }
       org.junit.Assert.assertEquals("Euclidean mean 2NN", mean2nnEuclid, meansize.getMean(), 0.00001);
       org.junit.Assert.assertEquals("Euclidean variance 2NN", var2nnEuclid, meansize.getSampleVariance(), 0.00001);
     }
     // Manhattan
     {
-      KNNQuery<NumberVector> knnq = new QueryBuilder<NumberVector>(relation, ManhattanDistance.STATIC).linearOnly().kNNQuery();
+      KNNSearcher<DBIDRef> knnq = new QueryBuilder<NumberVector>(relation, ManhattanDistance.STATIC).linearOnly().kNNByDBID();
 
       MeanVariance meansize = new MeanVariance();
       for(DBIDIter iditer = relation.iterDBIDs(); iditer.valid(); iditer.advance()) {
-        meansize.put(knnq.getKNNForDBID(iditer, 2).size());
+        meansize.put(knnq.getKNN(iditer, 2).size());
       }
       org.junit.Assert.assertEquals("Manhattan mean 2NN", mean2nnManhattan, meansize.getMean(), 0.00001);
       org.junit.Assert.assertEquals("Manhattan variance 2NN", var2nnManhattan, meansize.getSampleVariance(), 0.00001);
@@ -140,11 +138,8 @@ public class KNNJoinTest {
     Database db = AbstractSimpleAlgorithmTest.makeSimpleDatabase(dataset, shoulds, inputparams);
     Relation<NumberVector> relation = db.getRelation(TypeUtil.NUMBER_VECTOR_FIELD);
 
-    // Euclidean
-    {
-      KNNJoin<DoubleVector, ?, ?> knnjoin = new KNNJoin<DoubleVector, RStarTreeNode, SpatialEntry>(EuclideanDistance.STATIC, 2);
-      Relation<KNNList> result = knnjoin.run(db);
-
+    { // Euclidean
+      Relation<KNNList> result = new KNNJoin<>(EuclideanDistance.STATIC, 2).autorun(db);
       MeanVariance meansize = new MeanVariance();
       for(DBIDIter id = relation.getDBIDs().iter(); id.valid(); id.advance()) {
         meansize.put(result.get(id).size());
@@ -152,11 +147,8 @@ public class KNNJoinTest {
       org.junit.Assert.assertEquals("Euclidean mean 2NN set size", mean2nnEuclid, meansize.getMean(), 0.00001);
       org.junit.Assert.assertEquals("Euclidean variance 2NN", var2nnEuclid, meansize.getSampleVariance(), 0.00001);
     }
-    // Manhattan
-    {
-      KNNJoin<DoubleVector, ?, ?> knnjoin = new KNNJoin<DoubleVector, RStarTreeNode, SpatialEntry>(ManhattanDistance.STATIC, 2);
-      Relation<KNNList> result = knnjoin.run(db);
-
+    { // Manhattan
+      Relation<KNNList> result = new KNNJoin<>(ManhattanDistance.STATIC, 2).autorun(db);
       MeanVariance meansize = new MeanVariance();
       for(DBIDIter id = relation.getDBIDs().iter(); id.valid(); id.advance()) {
         meansize.put(result.get(id).size());

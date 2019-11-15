@@ -44,8 +44,8 @@ public class RandomNormalGeneratedTest extends AbstractClusterAlgorithmTest {
         .with(KMeans.K_ID, 5) //
         .with(KMeans.SEED_ID, 0) //
         .with(KMeans.INIT_ID, RandomNormalGenerated.class) //
-        .build().run(db);
-    testFMeasure(db, result, 0.7697589);
-    testClusterSizes(result, new int[] { 0, 158, 200, 242, 400 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.7697589);
+    assertClusterSizes(result, new int[] { 0, 158, 200, 242, 400 });
   }
 }

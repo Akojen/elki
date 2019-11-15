@@ -41,9 +41,9 @@ public class HilOutTest extends AbstractOutlierAlgorithmTest {
     OutlierResult result = new ELKIBuilder<HilOut<DoubleVector>>(HilOut.class) //
         .with(HilOut.Par.K_ID, 4) //
         .with(HilOut.Par.N_ID, 200) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.985398148);
-    testSingleScore(result, 945, 1.70927657);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.985398148);
+    assertSingleScore(result, 945, 1.70927657);
   }
 
   @Test
@@ -53,9 +53,9 @@ public class HilOutTest extends AbstractOutlierAlgorithmTest {
         .with(HilOut.Par.K_ID, 4) //
         .with(HilOut.Par.N_ID, 200) //
         .with(HilOut.Par.H_ID, 16) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.985398148);
-    testSingleScore(result, 945, 1.70927657);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.985398148);
+    assertSingleScore(result, 945, 1.70927657);
   }
 
   @Test
@@ -65,9 +65,9 @@ public class HilOutTest extends AbstractOutlierAlgorithmTest {
         .with(HilOut.Par.K_ID, 4) //
         .with(HilOut.Par.N_ID, 200) //
         .with(HilOut.Par.H_ID, 8) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.985398148);
-    testSingleScore(result, 945, 1.70927657);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.985398148);
+    assertSingleScore(result, 945, 1.70927657);
   }
 
   // Coarse enough to cause performance degradation:
@@ -78,8 +78,8 @@ public class HilOutTest extends AbstractOutlierAlgorithmTest {
         .with(HilOut.Par.K_ID, 4) //
         .with(HilOut.Par.N_ID, 200) //
         .with(HilOut.Par.H_ID, 2) //
-        .build().run(db);
-    testAUC(db, "Noise", result, 0.8246);
-    testSingleScore(result, 945, 0.);
+        .build().autorun(db);
+    assertAUC(db, "Noise", result, 0.8246);
+    assertSingleScore(result, 945, 0.);
   }
 }

@@ -50,9 +50,9 @@ public class SUBCLUTest extends AbstractClusterAlgorithmTest {
     Clustering<SubspaceModel> result = new ELKIBuilder<SUBCLU<DoubleVector>>(SUBCLU.class) //
         .with(SUBCLU.Par.EPSILON_ID, 0.001) //
         .with(SUBCLU.Par.MINPTS_ID, 100) //
-        .build().run(db);
+        .build().autorun(db);
     // PairCounting is not appropriate here: overlapping clusterings!
-    testClusterSizes(result, new int[] { 6, 191, 194, 395 });
+    assertClusterSizes(result, new int[] { 6, 191, 194, 395 });
   }
 
   @Test
@@ -61,9 +61,9 @@ public class SUBCLUTest extends AbstractClusterAlgorithmTest {
     Clustering<SubspaceModel> result = new ELKIBuilder<SUBCLU<DoubleVector>>(SUBCLU.class) //
         .with(SUBCLU.Par.EPSILON_ID, 0.04) //
         .with(SUBCLU.Par.MINPTS_ID, 70) //
-        .build().run(db);
+        .build().autorun(db);
     // PairCounting is not appropriate here: overlapping clusterings!
-    testClusterSizes(result, new int[] { 74, 99, 114, 136, 247, 303, 323 });
+    assertClusterSizes(result, new int[] { 74, 99, 114, 136, 247, 303, 323 });
   }
 
   @Test
@@ -77,8 +77,8 @@ public class SUBCLUTest extends AbstractClusterAlgorithmTest {
         .with(SUBCLU.Par.EPSILON_ID, 5) //
         .with(SUBCLU.Par.MINPTS_ID, 50) //
         .with(SUBCLU.Par.MINDIM_ID, 2) //
-        .build().run(db);
+        .build().autorun(db);
     // PairCounting is not appropriate here: overlapping clusterings!
-    testClusterSizes(result, new int[] { 72, 135, 145, 157, 161});
+    assertClusterSizes(result, new int[] { 72, 135, 145, 157, 161});
   }
 }

@@ -44,8 +44,8 @@ public class OstrovskyTest extends AbstractClusterAlgorithmTest {
         .with(KMeans.K_ID, 5) //
         .with(KMeans.SEED_ID, 3) //
         .with(KMeans.INIT_ID, Ostrovsky.class) //
-        .build().run(db);
-    testFMeasure(db, result, 0.9980);
-    testClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.9980);
+    assertClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
   }
 }

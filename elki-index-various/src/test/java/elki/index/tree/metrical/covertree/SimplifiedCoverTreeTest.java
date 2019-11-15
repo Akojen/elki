@@ -27,21 +27,18 @@ import elki.index.AbstractIndexStructureTest;
 import elki.utilities.ELKIBuilder;
 
 /**
- * Unit test for the Cover-tree.
+ * Unit test for the {@link SimplifiedCoverTree}.
  *
  * @author Erich Schubert
  * @since 0.7.5
  */
 public class SimplifiedCoverTreeTest extends AbstractIndexStructureTest {
-  /**
-   * Test {@link SimplifiedCoverTree} using a file based database connection.
-   */
   @Test
   public void testCovertree() {
     SimplifiedCoverTree.Factory<?> factory = new ELKIBuilder<>(SimplifiedCoverTree.Factory.class) //
         .with(SimplifiedCoverTree.Factory.Par.DISTANCE_FUNCTION_ID, EuclideanDistance.class).build();
-    testExactEuclidean(factory, SimplifiedCoverTree.CoverTreeKNNQuery.class, SimplifiedCoverTree.CoverTreeRangeQuery.class);
-    testPrioritySearchEuclidean(factory, SimplifiedCoverTree.PrioritySearcher.class);
-    testSinglePoint(factory, SimplifiedCoverTree.CoverTreeKNNQuery.class, SimplifiedCoverTree.CoverTreeRangeQuery.class);
+    assertExactEuclidean(factory, SimplifiedCoverTree.CoverTreeKNNSearcher.class, SimplifiedCoverTree.CoverTreeRangeSearcher.class);
+    assertPrioritySearchEuclidean(factory, SimplifiedCoverTree.CoverTreePrioritySearcher.class);
+    assertSinglePoint(factory, SimplifiedCoverTree.CoverTreeKNNSearcher.class, SimplifiedCoverTree.CoverTreeRangeSearcher.class);
   }
 }

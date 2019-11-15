@@ -45,11 +45,11 @@ public class CLARANSTest extends AbstractClusterAlgorithmTest {
         .with(CLARANS.Par.RANDOM_ID, 0) //
         .with(CLARANS.Par.NEIGHBORS_ID, 5) //
         .with(CLARANS.Par.RESTARTS_ID, 5) //
-        .build().run(db);
+        .build().autorun(db);
     // This test uses fairly low parameters. It's easy to find some that give
     // perfect results, but that is less useful for regression testing.
-    testFMeasure(db, result, 0.76375);
-    testClusterSizes(result, new int[] { 114, 173, 200, 200, 313 });
+    assertFMeasure(db, result, 0.76375);
+    assertClusterSizes(result, new int[] { 114, 173, 200, 200, 313 });
   }
 
   @Test
@@ -60,8 +60,8 @@ public class CLARANSTest extends AbstractClusterAlgorithmTest {
         .with(CLARANS.Par.RANDOM_ID, 0) //
         .with(CLARANS.Par.NEIGHBORS_ID, .1) //
         .with(CLARANS.Par.RESTARTS_ID, 5) //
-        .build().run(db);
-    testFMeasure(db, result, 0.913858);
-    testClusterSizes(result, new int[] { 57, 115, 158 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.913858);
+    assertClusterSizes(result, new int[] { 57, 115, 158 });
   }
 }

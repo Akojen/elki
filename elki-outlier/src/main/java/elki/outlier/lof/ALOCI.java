@@ -24,12 +24,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.NumberVector;
 import elki.data.type.CombinedTypeInformation;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
-import elki.database.Database;
 import elki.database.datastore.DataStoreFactory;
 import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.WritableDoubleDataStore;
@@ -42,6 +41,7 @@ import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.database.relation.RelationUtil;
 import elki.distance.NumberVectorDistance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.math.DoubleMinMax;
@@ -54,9 +54,11 @@ import elki.utilities.documentation.Description;
 import elki.utilities.documentation.Reference;
 import elki.utilities.documentation.Title;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
+import elki.utilities.optionhandling.parameters.ObjectParameter;
 import elki.utilities.optionhandling.parameters.RandomParameter;
 import elki.utilities.random.RandomFactory;
 
@@ -88,11 +90,16 @@ import net.jafama.FastMath;
     booktitle = "Proc. 19th IEEE Int. Conf. on Data Engineering (ICDE '03)", //
     url = "https://doi.org/10.1109/ICDE.2003.1260802", //
     bibkey = "DBLP:conf/icde/PapadimitriouKGF03")
-public class ALOCI<V extends NumberVector> extends AbstractDistanceBasedAlgorithm<NumberVectorDistance<? super V>, OutlierResult> implements OutlierAlgorithm {
+public class ALOCI<V extends NumberVector> implements OutlierAlgorithm {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(ALOCI.class);
+
+  /**
+   * Distance function used.
+   */
+  private NumberVectorDistance<? super V> distance;
 
   /**
    * Minimum size for a leaf.
@@ -124,14 +131,21 @@ public class ALOCI<V extends NumberVector> extends AbstractDistanceBasedAlgorith
    * @param rnd Random generator.
    */
   public ALOCI(NumberVectorDistance<? super V> distance, int nmin, int alpha, int g, RandomFactory rnd) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.nmin = nmin;
     this.alpha = alpha;
     this.g = g;
     this.rnd = rnd;
   }
 
-  public OutlierResult run(Database database, Relation<V> relation) {
+  /**
+   * Run the algorithm.
+   *
+   * @param relation Relation to process
+   * @return Outlier detection result
+   */
+  public OutlierResult run(Relation<V> relation) {
     final int dim = RelationUtil.dimensionality(relation);
     final Random random = rnd.getSingleThreadedRandom();
     FiniteProgress progressPreproc = LOG.isVerbose() ? new FiniteProgress("Build aLOCI quadtress", g, LOG) : null;
@@ -180,7 +194,7 @@ public class ALOCI<V extends NumberVector> extends AbstractDistanceBasedAlgorith
     FiniteProgress progressLOCI = LOG.isVerbose() ? new FiniteProgress("Compute aLOCI scores", relation.size(), LOG) : null;
     WritableDoubleDataStore mdef_norm = DataStoreUtil.makeDoubleStorage(relation.getDBIDs(), DataStoreFactory.HINT_STATIC);
     DoubleMinMax minmax = new DoubleMinMax();
-    NumberVectorDistance<? super V> distFunc = getDistance();
+    NumberVectorDistance<? super V> distFunc = distance; // local variable
 
     for(DBIDIter iditer = relation.iterDBIDs(); iditer.valid(); iditer.advance()) {
       final V obj = relation.get(iditer);
@@ -278,13 +292,8 @@ public class ALOCI<V extends NumberVector> extends AbstractDistanceBasedAlgorith
   }
 
   @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
-  @Override
   public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(new CombinedTypeInformation(TypeUtil.NUMBER_VECTOR_FIELD, getDistance().getInputTypeRestriction()));
+    return TypeUtil.array(new CombinedTypeInformation(TypeUtil.NUMBER_VECTOR_FIELD, distance.getInputTypeRestriction()));
   }
 
   /**
@@ -636,7 +645,7 @@ public class ALOCI<V extends NumberVector> extends AbstractDistanceBasedAlgorith
    *
    * @author Erich Schubert
    */
-  public static class Par<O extends NumberVector> extends AbstractDistanceBasedAlgorithm.Par<NumberVectorDistance<? super O>> {
+  public static class Par<O extends NumberVector> implements Parameterizer {
     /**
      * Parameter to specify the minimum neighborhood size
      */
@@ -677,14 +686,15 @@ public class ALOCI<V extends NumberVector> extends AbstractDistanceBasedAlgorith
      */
     protected RandomFactory rnd;
 
-    @Override
-    public Class<?> getDistanceRestriction() {
-      return NumberVectorDistance.class;
-    }
+    /**
+     * The distance function to use.
+     */
+    protected NumberVectorDistance<? super O> distance;
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<NumberVectorDistance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, NumberVectorDistance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(NMIN_ID, 20) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> this.nmin = x);

@@ -20,26 +20,16 @@
  */
 package elki.application.internal;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintStream;
+import java.io.*;
+import java.lang.reflect.Modifier;
 import java.net.JarURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.HashSet;
-import java.util.List;
-import java.util.TreeSet;
+import java.nio.file.StandardOpenOption;
+import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.regex.Matcher;
@@ -68,9 +58,9 @@ public class CheckELKIServices {
   private static final Logging LOG = Logging.getLogger(CheckELKIServices.class);
 
   /**
-   * Pattern to strip comments, while keeping commented class names.
+   * Pattern to STRIP comments, while keeping commented class names.
    */
-  private Pattern strip = Pattern.compile("^[\\s#]*(?:deprecated:\\s*)?(.*?)[\\s]*$");
+  private static final Pattern STRIP = Pattern.compile("^[\\s#]*(?:deprecated:\\s*)?(.*?)[\\s]*$");
 
   /**
    * Main method.
@@ -154,21 +144,21 @@ public class CheckELKIServices {
       LOG.warning("Service file name is not a class name: " + prop);
       return;
     }
-    List<Class<?>> impls = ELKIServiceRegistry.findAllImplementations(cls, false);
+    List<Class<?>> impls = ELKIServiceRegistry.findAllImplementations(cls, true);
     HashSet<String> names = new HashSet<>();
     for(Class<?> c2 : impls) {
-      names.add(c2.getName());
+      if(!c2.isInterface() && !Modifier.isAbstract(c2.getModifiers())) {
+        names.add(c2.getName());
+      }
     }
 
-    Matcher m = strip.matcher("");
     try {
       Enumeration<URL> us = getClass().getClassLoader().getResources(ELKIServiceLoader.RESOURCE_PREFIX + cls.getName());
+      Matcher m = STRIP.matcher("");
       while(us.hasMoreElements()) {
         URL u = us.nextElement();
         boolean injar = "jar".equals(u.getProtocol());
-        try (
-            InputStreamReader ir = new InputStreamReader(u.openStream(), StandardCharsets.UTF_8);
-            BufferedReader r = new BufferedReader(ir)) {
+        try (BufferedReader r = Files.newBufferedReader(Paths.get(u.toURI()))) {
           for(String line; (line = r.readLine()) != null;) {
             m.reset(line);
             if(!m.matches()) {
@@ -187,7 +177,7 @@ public class CheckELKIServices {
         }
       }
     }
-    catch(IOException e) {
+    catch(IOException | URISyntaxException e) {
       LOG.exception(e);
     }
     if(!names.isEmpty()) {
@@ -212,10 +202,10 @@ public class CheckELKIServices {
         if(!out.startsWith(folder)) {
           throw new RuntimeException("Insecure path: " + out.toString());
         }
-        PrintStream pr = new PrintStream(new FileOutputStream(out.toFile(), true));
-        pr.println(); // In case there was no linefeed at the end.
+        BufferedWriter pr = Files.newBufferedWriter(out, StandardOpenOption.APPEND);
+        pr.append('\n'); // In case there was no linefeed at the end.
         for(String remaining : sorted) {
-          pr.println(remaining);
+          pr.append(remaining).append('\n');
         }
         pr.close();
         LOG.warning("Updated service file: " + out.toString());

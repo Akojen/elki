@@ -20,19 +20,21 @@
  */
 package elki.outlier.intrinsic;
 
-import elki.AbstractDistanceBasedAlgorithm;
+import elki.Algorithm;
 import elki.data.type.TypeInformation;
 import elki.data.type.TypeUtil;
 import elki.database.datastore.DataStoreFactory;
 import elki.database.datastore.DataStoreUtil;
 import elki.database.datastore.WritableDoubleDataStore;
 import elki.database.ids.DBIDIter;
+import elki.database.ids.DBIDRef;
 import elki.database.query.QueryBuilder;
-import elki.database.query.knn.KNNQuery;
+import elki.database.query.knn.KNNSearcher;
 import elki.database.relation.DoubleRelation;
 import elki.database.relation.MaterializedDoubleRelation;
 import elki.database.relation.Relation;
 import elki.distance.Distance;
+import elki.distance.minkowski.EuclideanDistance;
 import elki.logging.Logging;
 import elki.logging.progress.FiniteProgress;
 import elki.math.DoubleMinMax;
@@ -44,6 +46,7 @@ import elki.result.outlier.OutlierResult;
 import elki.result.outlier.OutlierScoreMeta;
 import elki.utilities.documentation.Reference;
 import elki.utilities.optionhandling.OptionID;
+import elki.utilities.optionhandling.Parameterizer;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.IntParameter;
@@ -71,11 +74,16 @@ import elki.utilities.optionhandling.parameters.ObjectParameter;
     booktitle = "Proc. 11th Int. Conf. Similarity Search and Applications (SISAP'2018)", //
     url = "https://doi.org/10.1007/978-3-030-02224-2_14", //
     bibkey = "DBLP:conf/sisap/HouleSZ18")
-public class LID<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, OutlierResult> implements OutlierAlgorithm {
+public class LID<O> implements OutlierAlgorithm {
   /**
    * Class logger.
    */
   private static final Logging LOG = Logging.getLogger(LID.class);
+
+  /**
+   * Distance function used.
+   */
+  protected Distance<? super O> distance;
 
   /**
    * Number of neighbors to use + query point.
@@ -95,9 +103,15 @@ public class LID<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * @param estimator Estimator for intrinsic dimensionality
    */
   public LID(Distance<? super O> distance, int k, IntrinsicDimensionalityEstimator estimator) {
-    super(distance);
+    super();
+    this.distance = distance;
     this.kplus = k + 1; // + query point
     this.estimator = estimator;
+  }
+
+  @Override
+  public TypeInformation[] getInputTypeRestriction() {
+    return TypeUtil.array(distance.getInputTypeRestriction());
   }
 
   /**
@@ -107,7 +121,7 @@ public class LID<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
    * @return Outlier result
    */
   public OutlierResult run(Relation<O> relation) {
-    final KNNQuery<O> knnQuery = new QueryBuilder<>(relation, distance).kNNQuery(kplus);
+    final KNNSearcher<DBIDRef> knnQuery = new QueryBuilder<>(relation, distance).kNNByDBID(kplus);
 
     FiniteProgress prog = LOG.isVerbose() ? new FiniteProgress("kNN distance for objects", relation.size(), LOG) : null;
 
@@ -131,22 +145,12 @@ public class LID<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
     return new OutlierResult(meta, scoreres);
   }
 
-  @Override
-  public TypeInformation[] getInputTypeRestriction() {
-    return TypeUtil.array(getDistance().getInputTypeRestriction());
-  }
-
-  @Override
-  protected Logging getLogger() {
-    return LOG;
-  }
-
   /**
    * Parameterization class.
    *
    * @author Erich Schubert
    */
-  public static class Par<O> extends AbstractDistanceBasedAlgorithm.Par<Distance<? super O>> {
+  public static class Par<O> implements Parameterizer {
     /**
      * Parameter for the number of neighbors.
      */
@@ -156,6 +160,11 @@ public class LID<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
      * Class to use for estimating the ID.
      */
     public static final OptionID ESTIMATOR_ID = new OptionID("id.estimator", "Class to estimate ID from distance distribution.");
+
+    /**
+     * The distance function to use.
+     */
+    protected Distance<? super O> distance;
 
     /**
      * Number of neighbors to use for ID estimation.
@@ -169,7 +178,8 @@ public class LID<O> extends AbstractDistanceBasedAlgorithm<Distance<? super O>, 
 
     @Override
     public void configure(Parameterization config) {
-      super.configure(config);
+      new ObjectParameter<Distance<? super O>>(Algorithm.Utils.DISTANCE_FUNCTION_ID, Distance.class, EuclideanDistance.class) //
+          .grab(config, x -> distance = x);
       new IntParameter(K_ID) //
           .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT) //
           .grab(config, x -> k = x);

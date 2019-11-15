@@ -46,8 +46,8 @@ public class FastPAMTest extends AbstractClusterAlgorithmTest {
     Clustering<MedoidModel> result = new ELKIBuilder<FastPAM<DoubleVector>>(FastPAM.class) //
         .with(KMeans.K_ID, 5) //
         .with(KMeans.SEED_ID, 0) //
-        .build().run(db);
-    testFMeasure(db, result, 0.998005);
-    testClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
+        .build().autorun(db);
+    assertFMeasure(db, result, 0.998005);
+    assertClusterSizes(result, new int[] { 199, 200, 200, 200, 201 });
   }
 }
